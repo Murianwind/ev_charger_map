@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>전국 완속충전기 지도</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
+<style>
+  :root {
+    --ink: #1c2320;
+    --paper: #f6f5f1;
+    --line: #d8d6cd;
+    --available: #2f7d5a;
+    --charging: #c98a2c;
+    --other: #9a968a;
+    --accent: #1c2320;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+  }
+
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 20px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+    z-index: 1000;
+    flex-wrap: wrap;
+  }
+
+  header h1 {
+    font-size: 16px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  header .sub {
+    font-size: 12px;
+    color: #6b6a63;
+    margin-top: 2px;
+  }
+
+  .legend {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 12px;
+  }
+
+  .legend .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .legend .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.15);
+  }
+
+  #status-bar {
+    font-size: 12px;
+    color: #6b6a63;
+    padding: 4px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  #map {
+    flex: 1;
+  }
+
+  .marker-dot {
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.9), 0 1px 3px rgba(0,0,0,0.35);
+  }
+
+  .leaflet-popup-content-wrapper {
+    border-radius: 8px;
+  }
+
+  .popup {
+    font-size: 13px;
+    line-height: 1.5;
+    min-width: 240px;
+    max-width: 300px;
+  }
+
+  .popup h3 {
+    margin: 0 0 4px;
+    font-size: 14px;
+  }
+
+  .popup .addr {
+    color: #555;
+    margin-bottom: 8px;
+  }
+
+  .popup .field {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 0;
+    border-bottom: 1px dashed #e4e2d9;
+  }
+
+  .popup .field:last-of-type { border-bottom: none; }
+
+  .popup .field .k { color: #777; flex-shrink: 0; }
+  .popup .field .v { text-align: right; }
+
+  .popup .chargers {
+    margin-top: 8px;
+    border-top: 1px solid var(--line);
+    padding-top: 6px;
+  }
+
+  .popup .charger-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3px 0;
+  }
+
+  .popup .badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    color: #fff;
+    flex-shrink: 0;
+  }
+
+  .popup .note {
+    margin-top: 8px;
+    padding: 6px 8px;
+    background: #fbf3e1;
+    border-radius: 6px;
+    color: #7a5b12;
+    font-size: 11.5px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div>
+      <h1>전국 완속충전기 지도</h1>
+      <div class="sub">이용제한 없음 · 주차료 무료 · AC완속 / NACS / DC콤보+NACS</div>
+    </div>
+    <div class="legend">
+      <span class="chip"><span class="dot" style="background:var(--available)"></span>사용가능</span>
+      <span class="chip"><span class="dot" style="background:var(--charging)"></span>충전중</span>
+      <span class="chip"><span class="dot" style="background:var(--other)"></span>기타(점검/중지 등)</span>
+    </div>
+  </header>
+  <div id="status-bar">불러오는 중...</div>
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+const STATUS_COLOR = {
+  "2": "#2f7d5a", // 사용가능
+  "3": "#c98a2c", // 충전중
+  DEFAULT: "#9a968a", // 통신이상 / 운영중지 / 점검중 / 알수없음
+};
+
+const map = L.map("map", { zoomControl: true }).setView([36.4, 127.9], 7);
+
+L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  maxZoom: 19,
+}).addTo(map);
+
+const clusterGroup = L.markerClusterGroup({
+  maxClusterRadius: 45,
+  spiderfyOnMaxZoom: true,
+});
+
+function stationColor(chargers) {
+  const stats = chargers.map((c) => c.stat);
+  if (stats.includes("2")) return STATUS_COLOR["2"];
+  if (stats.includes("3")) return STATUS_COLOR["3"];
+  return STATUS_COLOR.DEFAULT;
+}
+
+function escapeHtml(str) {
+  if (str === undefined || str === null || str === "") return "-";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function floorLabel(props) {
+  const type = props.floorType === "B" ? "지하" : props.floorType === "F" ? "지상" : "";
+  if (!type) return "-";
+  const num = props.floorNum ? `${props.floorNum}층` : "";
+  return `${type} ${num}`.trim();
+}
+
+function buildPopup(props) {
+  const chargerRows = props.chargers
+    .map((c) => {
+      const color = STATUS_COLOR[c.stat] || STATUS_COLOR.DEFAULT;
+      return `
+        <div class="charger-row">
+          <span>${escapeHtml(c.chgerTypeName)}${c.output ? ` (${escapeHtml(c.output)}kW)` : ""}</span>
+          <span class="badge" style="background:${color}">${escapeHtml(c.statName)}</span>
+        </div>`;
+    })
+    .join("");
+
+  // limitYn=N으로 필터링된 항목이라도 limitDetail에 값이 남아있는 경우,
+  // 추후 필터 조건 보강을 위해 그대로 노출한다.
+  const limitNote = props.limitDetail
+    ? `<div class="note">이용제한 사유(참고): ${escapeHtml(props.limitDetail)}</div>`
+    : "";
+
+  return `
+    <div class="popup">
+      <h3>${escapeHtml(props.statNm)}</h3>
+      <div class="addr">${escapeHtml(props.addr)} ${escapeHtml(props.addrDetail)}</div>
+      <div class="field"><span class="k">이용시간</span><span class="v">${escapeHtml(props.useTime)}</span></div>
+      <div class="field"><span class="k">운영기관</span><span class="v">${escapeHtml(props.busiNm)}</span></div>
+      <div class="field"><span class="k">이용자 제한</span><span class="v">${props.limitYn === "N" ? "없음" : escapeHtml(props.limitYn)}</span></div>
+      <div class="field"><span class="k">주차료</span><span class="v">${props.parkingFree === "Y" ? "무료" : escapeHtml(props.parkingFree)}</span></div>
+      <div class="field"><span class="k">지상/지하</span><span class="v">${floorLabel(props)}</span></div>
+      <div class="chargers">${chargerRows}</div>
+      ${limitNote}
+    </div>`;
+}
+
+async function loadData() {
+  const statusBar = document.getElementById("status-bar");
+  try {
+    const res = await fetch("data/chargers.geojson", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const geojson = await res.json();
+
+    const layer = L.geoJSON(geojson, {
+      pointToLayer: (feature, latlng) => {
+        const color = stationColor(feature.properties.chargers);
+        return L.circleMarker(latlng, {
+          radius: 7,
+          fillColor: color,
+          color: "#fff",
+          weight: 1.5,
+          fillOpacity: 0.95,
+          className: "marker-dot",
+        });
+      },
+      onEachFeature: (feature, layer) => {
+        layer.bindPopup(buildPopup(feature.properties));
+      },
+    });
+
+    clusterGroup.addLayer(layer);
+    map.addLayer(clusterGroup);
+
+    if (geojson.features.length) {
+      map.fitBounds(clusterGroup.getBounds(), { padding: [20, 20] });
+    }
+
+    statusBar.textContent = `충전소 ${geojson.features.length.toLocaleString()}개소 표시 중`;
+  } catch (err) {
+    console.error(err);
+    statusBar.textContent = "데이터를 불러오지 못했습니다. data/chargers.geojson 파일을 확인해 주세요.";
+  }
+}
+
+loadData();
+</script>
+</body>
+</html>
