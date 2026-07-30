@@ -246,13 +246,14 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// center를 기준으로, 화면의 짧은 변에 반경 원이 꽉 차도록 줌 레벨을 계산한다.
-// fitBounds(사각 bounds)는 화면이 옆으로 넓을 때 좌우로 여백이 많이 남는 문제가 있어
-// 화면 픽셀 크기 기준으로 직접 줌을 계산하는 방식으로 바꿨다.
+const WIDTH_FILL_FRACTION = 1 / 3; // 반경(radiusKm)이 화면 가로의 이 비율만큼을 차지하도록
+
+// center를 기준으로, 화면 "가로" 크기에 맞춰 줌 레벨을 계산한다.
+// 세로(짧은 변) 기준으로 계산하면 화면이 옆으로 아주 넓을 때 동서로 훨씬 넓은
+// 실제 거리가 그대로 보이는 문제가 있어, 가로 기준 고정 비율로 바꿨다.
 function zoomForRadius(center, radiusKm) {
   const size = map.getSize(); // {x: 너비, y: 높이} px
-  const shortSidePx = Math.min(size.x, size.y);
-  const desiredPixelRadius = shortSidePx * 0.34; // 반경 원이 화면 짧은 변의 ~68%를 채우도록
+  const desiredPixelRadius = size.x * WIDTH_FILL_FRACTION;
   const metersPerPixel = (radiusKm * 1000) / desiredPixelRadius;
   const zoom =
     Math.log2((156543.03392 * Math.cos((center.lat * Math.PI) / 180)) / metersPerPixel);
