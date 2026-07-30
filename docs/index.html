@@ -162,6 +162,29 @@
     color: #7a5b12;
     font-size: 11.5px;
   }
+
+  .locate-btn {
+    width: 40px;
+    height: 40px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    color: #2563eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .locate-btn:hover { background: #f3f6ff; }
+  .locate-btn:active { transform: translateY(1px); }
+
+  .user-dot {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.35), 0 0 0 1px #fff;
+  }
 </style>
 </head>
 <body>
@@ -221,6 +244,17 @@ function haversineKm(lat1, lng1, lat2, lng2) {
     Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// center를 기준으로 radiusKm를 정확히 담는 bounds 계산
+// (고정 줌 레벨을 쓰면 화면 크기에 따라 50km보다 훨씬 넓게 보이는 문제가 있어 bounds로 맞춘다)
+function boundsForRadius(center, radiusKm) {
+  const dLat = (radiusKm * 1000) / 111320;
+  const dLng = (radiusKm * 1000) / (111320 * Math.cos((center.lat * Math.PI) / 180));
+  return L.latLngBounds(
+    [center.lat - dLat, center.lng - dLng],
+    [center.lat + dLat, center.lng + dLng]
+  );
 }
 
 function stationColor(chargers) {
@@ -321,15 +355,63 @@ map.on("moveend", () => {
   }, MOVE_SETTLE_DELAY_MS);
 });
 
-function locateAndRenderInitial() {
+let userLatLng = null;
+let userMarker = null;
+let radiusCircle = null;
+
+// 현재 위치 마커 + 반경 안내 원을 표시(있으면 위치만 갱신)
+function showUserLocation(center) {
+  userLatLng = center;
+
+  if (userMarker) {
+    userMarker.setLatLng(center);
+  } else {
+    userMarker = L.circleMarker(center, {
+      radius: 8,
+      fillColor: "#2563eb",
+      color: "#fff",
+      weight: 2,
+      fillOpacity: 1,
+      className: "user-dot",
+    }).addTo(map);
+    userMarker.bindTooltip("현재 위치", { direction: "top", offset: [0, -8] });
+  }
+
+  if (radiusCircle) {
+    radiusCircle.setLatLng(center);
+  } else {
+    radiusCircle = L.circle(center, {
+      radius: RADIUS_KM * 1000,
+      color: "#2563eb",
+      weight: 1,
+      fillOpacity: 0.04,
+      dashArray: "4 6",
+    }).addTo(map);
+  }
+}
+
+// "현재 위치로 이동" 버튼 핸들러: 이미 위치를 알고 있으면 바로 이동,
+// 모르면(아직 못 받았거나 최초 거부 후 다시 시도) 새로 요청한다.
+function goToUserLocation() {
+  if (userLatLng) {
+    map.fitBounds(boundsForRadius(userLatLng, RADIUS_KM), { padding: [20, 20] });
+    renderWithinRadius(userLatLng, RADIUS_KM);
+  } else {
+    requestLocation();
+  }
+}
+
+function requestLocation() {
   if (!navigator.geolocation) {
+    statusBar.textContent = "이 브라우저는 위치 정보를 지원하지 않습니다.";
     renderWithinRadius(map.getCenter(), null);
     return;
   }
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       const center = L.latLng(pos.coords.latitude, pos.coords.longitude);
-      map.setView(center, 11);
+      showUserLocation(center);
+      map.fitBounds(boundsForRadius(center, RADIUS_KM), { padding: [20, 20] });
       renderWithinRadius(center, RADIUS_KM);
     },
     (err) => {
@@ -341,6 +423,20 @@ function locateAndRenderInitial() {
   );
 }
 
+const LocateControl = L.Control.extend({
+  options: { position: "bottomright" },
+  onAdd: function () {
+    const btn = L.DomUtil.create("button", "locate-btn");
+    btn.type = "button";
+    btn.title = "현재 위치로 이동";
+    btn.innerHTML = "⦿";
+    L.DomEvent.disableClickPropagation(btn);
+    L.DomEvent.on(btn, "click", goToUserLocation);
+    return btn;
+  },
+});
+map.addControl(new LocateControl());
+
 async function loadData() {
   statusBar.textContent = "불러오는 중...";
   try {
@@ -351,7 +447,7 @@ async function loadData() {
     allFeatures = geojson.features;
     dataLoaded = true;
 
-    locateAndRenderInitial();
+    requestLocation();
   } catch (err) {
     console.error(err);
     statusBar.textContent = "데이터를 불러오지 못했습니다. data/chargers.geojson 파일을 확인해 주세요.";
