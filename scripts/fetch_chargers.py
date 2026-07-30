@@ -12,6 +12,10 @@
   2) parkingFree == "Y"        : 주차료 무료
   3) chgerType in {02, 09, 10} : AC완속 / NACS / DC콤보+NACS
   4) delYn != "Y"              : 삭제(철거)된 충전기 제외
+
+  예외: busiId == "TE"(테슬라)인 충전기는 위 1~3번 조건과 무관하게
+  전부 포함한다 (이용제한이 있는 테슬라 차량 전용 슈퍼차저도 표시하기 위함).
+  단, 삭제된 충전기(delYn=Y)는 테슬라여도 제외한다.
 """
 import json
 import os
@@ -19,6 +23,8 @@ import sys
 from collections import OrderedDict
 
 from common import ALLOWED_CHGER_TYPES, CHGER_TYPE_NAMES, STAT_NAMES, fetch_all, to_float
+
+TESLA_BUSI_ID = "TE"
 
 
 def get_service_key():
@@ -30,13 +36,18 @@ def get_service_key():
 
 
 def passes_filter(item):
+    if item.get("delYn") == "Y":
+        return False
+
+    if item.get("busiId") == TESLA_BUSI_ID:
+        # 테슬라 슈퍼차저는 이용제한/주차료/커넥터 타입과 무관하게 전부 포함
+        return True
+
     if item.get("limitYn") != "N":
         return False
     if item.get("parkingFree") != "Y":
         return False
     if item.get("chgerType") not in ALLOWED_CHGER_TYPES:
-        return False
-    if item.get("delYn") == "Y":
         return False
     return True
 
@@ -73,10 +84,14 @@ def build_geojson(items):
                 "limitDetail": item.get("limitDetail", ""),
                 "floorType": item.get("floorType", ""),
                 "floorNum": item.get("floorNum", ""),
+                "isTesla": False,
                 "lat": lat,
                 "lng": lng,
                 "chargers": [],
             }
+
+        if item.get("busiId") == TESLA_BUSI_ID:
+            stations[stat_id]["isTesla"] = True
 
         stations[stat_id]["chargers"].append(
             {
