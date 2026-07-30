@@ -246,15 +246,17 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// center를 기준으로 radiusKm를 정확히 담는 bounds 계산
-// (고정 줌 레벨을 쓰면 화면 크기에 따라 50km보다 훨씬 넓게 보이는 문제가 있어 bounds로 맞춘다)
-function boundsForRadius(center, radiusKm) {
-  const dLat = (radiusKm * 1000) / 111320;
-  const dLng = (radiusKm * 1000) / (111320 * Math.cos((center.lat * Math.PI) / 180));
-  return L.latLngBounds(
-    [center.lat - dLat, center.lng - dLng],
-    [center.lat + dLat, center.lng + dLng]
-  );
+// center를 기준으로, 화면의 짧은 변에 반경 원이 꽉 차도록 줌 레벨을 계산한다.
+// fitBounds(사각 bounds)는 화면이 옆으로 넓을 때 좌우로 여백이 많이 남는 문제가 있어
+// 화면 픽셀 크기 기준으로 직접 줌을 계산하는 방식으로 바꿨다.
+function zoomForRadius(center, radiusKm) {
+  const size = map.getSize(); // {x: 너비, y: 높이} px
+  const shortSidePx = Math.min(size.x, size.y);
+  const desiredPixelRadius = shortSidePx * 0.34; // 반경 원이 화면 짧은 변의 ~68%를 채우도록
+  const metersPerPixel = (radiusKm * 1000) / desiredPixelRadius;
+  const zoom =
+    Math.log2((156543.03392 * Math.cos((center.lat * Math.PI) / 180)) / metersPerPixel);
+  return Math.max(5, Math.min(16, zoom));
 }
 
 function stationColor(chargers) {
@@ -394,7 +396,7 @@ function showUserLocation(center) {
 // 모르면(아직 못 받았거나 최초 거부 후 다시 시도) 새로 요청한다.
 function goToUserLocation() {
   if (userLatLng) {
-    map.fitBounds(boundsForRadius(userLatLng, RADIUS_KM), { padding: [20, 20] });
+    map.setView(userLatLng, zoomForRadius(userLatLng, RADIUS_KM));
     renderWithinRadius(userLatLng, RADIUS_KM);
   } else {
     requestLocation();
@@ -411,7 +413,7 @@ function requestLocation() {
     (pos) => {
       const center = L.latLng(pos.coords.latitude, pos.coords.longitude);
       showUserLocation(center);
-      map.fitBounds(boundsForRadius(center, RADIUS_KM), { padding: [20, 20] });
+      map.setView(center, zoomForRadius(center, RADIUS_KM));
       renderWithinRadius(center, RADIUS_KM);
     },
     (err) => {
