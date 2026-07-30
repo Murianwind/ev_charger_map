@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>전국 완속충전기 지도</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
@@ -213,7 +214,7 @@ const STATUS_COLOR = {
   DEFAULT: "#9a968a", // 통신이상 / 운영중지 / 점검중 / 알수없음
 };
 
-const RADIUS_KM = 50;
+const RADIUS_KM = 30;
 const MOVE_SETTLE_DELAY_MS = 1500; // 지도 이동이 끝난 뒤 이 시간만큼 더 기다렸다가 재표출
 const DEFAULT_CENTER = [36.4, 127.9];
 const DEFAULT_ZOOM = 7;
@@ -246,14 +247,23 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-const WIDTH_FILL_FRACTION = 1 / 3; // 반경(radiusKm)이 화면 가로의 이 비율만큼을 차지하도록
-
-// center를 기준으로, 화면 "가로" 크기에 맞춰 줌 레벨을 계산한다.
-// 세로(짧은 변) 기준으로 계산하면 화면이 옆으로 아주 넓을 때 동서로 훨씬 넓은
-// 실제 거리가 그대로 보이는 문제가 있어, 가로 기준 고정 비율로 바꿨다.
+// center를 기준으로, 화면의 짧은 변에 반경 원이 어느 정도 차도록 줌 레벨을 계산한다.
+// map.getSize()는 레이아웃이 아직 안정되기 전에 부르면 엉뚱한(때로는 0에 가까운)
+// 값을 반환할 수 있어, 먼저 invalidateSize()로 강제로 다시 계산시킨다.
+// 가로/세로 중 "짧은 변" 기준으로 계산해야 가로로 넓은 데스크톱과 세로로 긴
+// 모바일 양쪽 다 반경 원이 화면 밖으로 넘치지 않는다.
 function zoomForRadius(center, radiusKm) {
+  map.invalidateSize();
   const size = map.getSize(); // {x: 너비, y: 높이} px
-  const desiredPixelRadius = size.x * WIDTH_FILL_FRACTION;
+  const shortSidePx = Math.min(size.x, size.y);
+
+  if (!shortSidePx || shortSidePx < 50) {
+    // 아직 레이아웃이 안 잡혀 크기를 못 믿을 상황: 무리하게 확대/축소하지 말고
+    // 도시 단위로 보이는 무난한 기본 줌으로 대체한다.
+    return 10;
+  }
+
+  const desiredPixelRadius = shortSidePx * 0.34; // 반경 원이 화면 짧은 변의 ~68%를 채우도록
   const metersPerPixel = (radiusKm * 1000) / desiredPixelRadius;
   const zoom =
     Math.log2((156543.03392 * Math.cos((center.lat * Math.PI) / 180)) / metersPerPixel);
