@@ -7,7 +7,8 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
-  
+<meta name="apple-mobile-web-app-title" content="완속충전기" />
+
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
@@ -166,6 +167,17 @@
     font-size: 11.5px;
   }
 
+  .tesla-badge {
+    display: inline-block;
+    margin-bottom: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #cc0000;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
   .locate-btn {
     width: 40px;
     height: 40px;
@@ -201,6 +213,7 @@
       <span class="chip"><span class="dot" style="background:var(--available)"></span>사용가능</span>
       <span class="chip"><span class="dot" style="background:var(--charging)"></span>충전중</span>
       <span class="chip"><span class="dot" style="background:var(--other)"></span>기타(점검/중지 등)</span>
+      <span class="chip"><span class="dot" style="background:#fff;box-shadow:0 0 0 2px #cc0000"></span>테슬라(빨간 테두리)</span>
     </div>
   </header>
   <div id="status-bar">불러오는 중...</div>
@@ -216,7 +229,7 @@ const STATUS_COLOR = {
   DEFAULT: "#9a968a", // 통신이상 / 운영중지 / 점검중 / 알수없음
 };
 
-const RADIUS_KM = 20;
+const RADIUS_KM = 30;
 const MOVE_SETTLE_DELAY_MS = 1500; // 지도 이동이 끝난 뒤 이 시간만큼 더 기다렸다가 재표출
 const DEFAULT_CENTER = [36.4, 127.9];
 const DEFAULT_ZOOM = 7;
@@ -265,7 +278,7 @@ function zoomForRadius(center, radiusKm) {
     return 10;
   }
 
-  const desiredPixelRadius = shortSidePx * 0.5; // 반경 원이 화면 짧은 변의 ~68%를 채우도록
+  const desiredPixelRadius = shortSidePx * 0.34; // 반경 원이 화면 짧은 변의 ~68%를 채우도록
   const metersPerPixel = (radiusKm * 1000) / desiredPixelRadius;
   const zoom =
     Math.log2((156543.03392 * Math.cos((center.lat * Math.PI) / 180)) / metersPerPixel);
@@ -312,14 +325,24 @@ function buildPopup(props) {
     ? `<div class="note">이용제한 사유(참고): ${escapeHtml(props.limitDetail)}</div>`
     : "";
 
+  const teslaBadge = props.isTesla
+    ? `<div class="tesla-badge">⚡ 테슬라 슈퍼차저</div>`
+    : "";
+
+  const limitLabel =
+    props.limitYn === "N" ? "없음" : props.limitYn === "Y" ? "있음" : "확인 필요";
+  const parkingLabel =
+    props.parkingFree === "Y" ? "무료" : props.parkingFree === "N" ? "유료" : "확인 필요";
+
   return `
     <div class="popup">
+      ${teslaBadge}
       <h3>${escapeHtml(props.statNm)}</h3>
       <div class="addr">${escapeHtml(props.addr)} ${escapeHtml(props.addrDetail)}</div>
       <div class="field"><span class="k">이용시간</span><span class="v">${escapeHtml(props.useTime)}</span></div>
       <div class="field"><span class="k">운영기관</span><span class="v">${escapeHtml(props.busiNm)}</span></div>
-      <div class="field"><span class="k">이용자 제한</span><span class="v">${props.limitYn === "N" ? "없음" : escapeHtml(props.limitYn)}</span></div>
-      <div class="field"><span class="k">주차료</span><span class="v">${props.parkingFree === "Y" ? "무료" : escapeHtml(props.parkingFree)}</span></div>
+      <div class="field"><span class="k">이용자 제한</span><span class="v">${limitLabel}</span></div>
+      <div class="field"><span class="k">주차료</span><span class="v">${parkingLabel}</span></div>
       <div class="field"><span class="k">지상/지하</span><span class="v">${floorLabel(props)}</span></div>
       <div class="chargers">${chargerRows}</div>
       ${limitNote}
@@ -330,16 +353,17 @@ const statusBar = document.getElementById("status-bar");
 
 function makeMarker(feature) {
   const [lng, lat] = feature.geometry.coordinates;
-  const color = stationColor(feature.properties.chargers);
+  const props = feature.properties;
+  const color = stationColor(props.chargers);
   const marker = L.circleMarker([lat, lng], {
     radius: 7,
     fillColor: color,
-    color: "#fff",
-    weight: 1.5,
+    color: props.isTesla ? "#cc0000" : "#fff",
+    weight: props.isTesla ? 2.5 : 1.5,
     fillOpacity: 0.95,
     className: "marker-dot",
   });
-  marker.bindPopup(buildPopup(feature.properties));
+  marker.bindPopup(buildPopup(props));
   return marker;
 }
 
