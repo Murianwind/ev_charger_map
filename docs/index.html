@@ -214,7 +214,7 @@ const STATUS_COLOR = {
   DEFAULT: "#9a968a", // 통신이상 / 운영중지 / 점검중 / 알수없음
 };
 
-const RADIUS_KM = 30;
+const RADIUS_KM = 20;
 const MOVE_SETTLE_DELAY_MS = 1500; // 지도 이동이 끝난 뒤 이 시간만큼 더 기다렸다가 재표출
 const DEFAULT_CENTER = [36.4, 127.9];
 const DEFAULT_ZOOM = 7;
@@ -263,7 +263,7 @@ function zoomForRadius(center, radiusKm) {
     return 10;
   }
 
-  const desiredPixelRadius = shortSidePx * 0.34; // 반경 원이 화면 짧은 변의 ~68%를 채우도록
+  const desiredPixelRadius = shortSidePx * 0.5; // 반경 원이 화면 짧은 변의 ~68%를 채우도록
   const metersPerPixel = (radiusKm * 1000) / desiredPixelRadius;
   const zoom =
     Math.log2((156543.03392 * Math.cos((center.lat * Math.PI) / 180)) / metersPerPixel);
