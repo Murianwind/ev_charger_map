@@ -76,6 +76,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    white-space: nowrap
   }
 
   .legend .dot {
@@ -210,10 +211,10 @@
       <div class="sub">이용제한 없음 · 주차료 무료 · AC완속 / NACS / DC콤보+NACS</div>
     </div>
     <div class="legend">
-      <span class="chip"><span class="dot" style="background:var(--available)"></span>사용가능</span>
+      <span class="chip"><span class="dot" style="background:var(--available)"></span>충전가능</span>
       <span class="chip"><span class="dot" style="background:var(--charging)"></span>충전중</span>
-      <span class="chip"><span class="dot" style="background:var(--other)"></span>기타(점검/중지 등)</span>
-      <span class="chip"><span class="dot" style="background:#fff;box-shadow:0 0 0 2px #cc0000"></span>테슬라(빨간 테두리)</span>
+      <span class="chip"><span class="dot" style="background:var(--other)"></span>충전불가</span>
+      <span class="chip"><span class="dot" style="background:#fff;box-shadow:0 0 0 2px #cc0000"></span>수퍼차저</span>
     </div>
   </header>
   <div id="status-bar">불러오는 중...</div>
