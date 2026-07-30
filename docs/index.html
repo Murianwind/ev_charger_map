@@ -190,7 +190,12 @@ const STATUS_COLOR = {
   DEFAULT: "#9a968a", // 통신이상 / 운영중지 / 점검중 / 알수없음
 };
 
-const map = L.map("map", { zoomControl: true }).setView([36.4, 127.9], 7);
+const RADIUS_KM = 50;
+const MOVE_SETTLE_DELAY_MS = 1500; // 지도 이동이 끝난 뒤 이 시간만큼 더 기다렸다가 재표출
+const DEFAULT_CENTER = [36.4, 127.9];
+const DEFAULT_ZOOM = 7;
+
+const map = L.map("map", { zoomControl: true }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
 
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
   attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
@@ -201,6 +206,22 @@ const clusterGroup = L.markerClusterGroup({
   maxClusterRadius: 45,
   spiderfyOnMaxZoom: true,
 });
+map.addLayer(clusterGroup);
+
+let allFeatures = [];
+let dataLoaded = false;
+let moveEndTimer = null;
+
+// 두 좌표 간 거리(km), Haversine 공식
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
 
 function stationColor(chargers) {
   const stats = chargers.map((c) => c.stat);
@@ -256,38 +277,81 @@ function buildPopup(props) {
     </div>`;
 }
 
+const statusBar = document.getElementById("status-bar");
+
+function makeMarker(feature) {
+  const [lng, lat] = feature.geometry.coordinates;
+  const color = stationColor(feature.properties.chargers);
+  const marker = L.circleMarker([lat, lng], {
+    radius: 7,
+    fillColor: color,
+    color: "#fff",
+    weight: 1.5,
+    fillOpacity: 0.95,
+    className: "marker-dot",
+  });
+  marker.bindPopup(buildPopup(feature.properties));
+  return marker;
+}
+
+// center 반경 RADIUS_KM 안의 충전소만 걸러 다시 그린다.
+// radiusKm이 없으면(geolocation 실패 등) 전체를 표시한다.
+function renderWithinRadius(center, radiusKm) {
+  const filtered = radiusKm
+    ? allFeatures.filter((f) => {
+        const [lng, lat] = f.geometry.coordinates;
+        return haversineKm(center.lat, center.lng, lat, lng) <= radiusKm;
+      })
+    : allFeatures;
+
+  clusterGroup.clearLayers();
+  clusterGroup.addLayers(filtered.map(makeMarker));
+
+  const scopeLabel = radiusKm ? `현재 지도 중심 반경 ${radiusKm}km` : "전국";
+  statusBar.textContent = `${scopeLabel} 내 충전소 ${filtered.length.toLocaleString()}개소 표시 중`;
+}
+
+// 사용자가 지도를 이동/확대·축소한 뒤, 동작이 완전히 끝나고 나서
+// MOVE_SETTLE_DELAY_MS만큼 더 기다렸다가 새 중심 기준 반경으로 다시 표출한다.
+map.on("moveend", () => {
+  if (!dataLoaded) return;
+  if (moveEndTimer) clearTimeout(moveEndTimer);
+  moveEndTimer = setTimeout(() => {
+    renderWithinRadius(map.getCenter(), RADIUS_KM);
+  }, MOVE_SETTLE_DELAY_MS);
+});
+
+function locateAndRenderInitial() {
+  if (!navigator.geolocation) {
+    renderWithinRadius(map.getCenter(), null);
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const center = L.latLng(pos.coords.latitude, pos.coords.longitude);
+      map.setView(center, 11);
+      renderWithinRadius(center, RADIUS_KM);
+    },
+    (err) => {
+      console.warn("위치 정보를 가져오지 못했습니다:", err.message);
+      statusBar.textContent = "위치 권한이 없어 전국 데이터를 표시합니다.";
+      renderWithinRadius(map.getCenter(), null);
+    },
+    { timeout: 8000, maximumAge: 5 * 60 * 1000 }
+  );
+}
+
 async function loadData() {
-  const statusBar = document.getElementById("status-bar");
+  statusBar.textContent = "불러오는 중...";
   try {
     const res = await fetch("data/chargers.geojson", { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const geojson = await res.json();
 
-    const layer = L.geoJSON(geojson, {
-      pointToLayer: (feature, latlng) => {
-        const color = stationColor(feature.properties.chargers);
-        return L.circleMarker(latlng, {
-          radius: 7,
-          fillColor: color,
-          color: "#fff",
-          weight: 1.5,
-          fillOpacity: 0.95,
-          className: "marker-dot",
-        });
-      },
-      onEachFeature: (feature, layer) => {
-        layer.bindPopup(buildPopup(feature.properties));
-      },
-    });
+    allFeatures = geojson.features;
+    dataLoaded = true;
 
-    clusterGroup.addLayer(layer);
-    map.addLayer(clusterGroup);
-
-    if (geojson.features.length) {
-      map.fitBounds(clusterGroup.getBounds(), { padding: [20, 20] });
-    }
-
-    statusBar.textContent = `충전소 ${geojson.features.length.toLocaleString()}개소 표시 중`;
+    locateAndRenderInitial();
   } catch (err) {
     console.error(err);
     statusBar.textContent = "데이터를 불러오지 못했습니다. data/chargers.geojson 파일을 확인해 주세요.";
