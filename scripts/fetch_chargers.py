@@ -13,7 +13,8 @@
   3) chgerType in {02, 09, 10} : AC완속 / NACS / DC콤보+NACS
   4) delYn != "Y"              : 삭제(철거)된 충전기 제외
   5) kindDetail이 학교/아파트가 아닐 것
-  6) limitDetail에 "비개방" 문구가 없을 것
+  6) limitDetail/useTime에 "비개방","외부인","입주민","거주자" 등의 문구가 없을 것
+     (아파트 등이 kindDetail로 정확히 분류 안 돼 있는 경우가 있어 텍스트로 한 번 더 거른다)
 
   예외: busiId == "TE"(테슬라)인 충전기는 위 조건과 무관하게 전부 포함한다
   (단, 삭제된 충전기는 테슬라여도 제외).
@@ -38,7 +39,9 @@ def get_service_key():
 
 
 EXCLUDED_KIND_DETAILS = {"J001", "H001"}  # 학교, 아파트
-NON_OPEN_KEYWORDS = ("비개방",)  # limitDetail에 이 문구가 있으면 limitYn=N이어도 제외
+# limitDetail 또는 useTime에 이 문구가 있으면 limitYn=N/kindDetail 분류와 무관하게 제외
+# (아파트 등이 kindDetail로 정확히 분류 안 돼 있는 경우가 있어 텍스트로 한 번 더 거른다)
+NON_OPEN_KEYWORDS = ("비개방", "외부인", "입주민", "거주자")
 
 
 def passes_filter(item):
@@ -52,8 +55,8 @@ def passes_filter(item):
     if item.get("kindDetail") in EXCLUDED_KIND_DETAILS:
         return False
 
-    limit_detail = item.get("limitDetail") or ""
-    if any(keyword in limit_detail for keyword in NON_OPEN_KEYWORDS):
+    text_fields = f"{item.get('limitDetail') or ''} {item.get('useTime') or ''}"
+    if any(keyword in text_fields for keyword in NON_OPEN_KEYWORDS):
         return False
 
     if item.get("limitYn") != "N":
