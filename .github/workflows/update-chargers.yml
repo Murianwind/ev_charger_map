@@ -1,4 +1,4 @@
-name: Update EV Charger Data (full)
+name: Update EV Charger Data
 
 on:
   schedule:
