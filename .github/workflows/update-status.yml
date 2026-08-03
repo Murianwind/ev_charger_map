@@ -21,7 +21,7 @@ jobs:
       - name: Fetch status delta
         env:
           EV_SERVICE_KEY: ${{ secrets.EV_SERVICE_KEY }}
-          EV_STATUS_PERIOD_MIN: "10"
+          EV_STATUS_PERIOD_MIN: "60"
         run: python scripts/fetch_status.py
 
       - name: Commit status changes
