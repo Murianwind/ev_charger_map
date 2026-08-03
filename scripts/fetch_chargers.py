@@ -41,7 +41,7 @@ def get_service_key():
 EXCLUDED_KIND_DETAILS = {"J001", "H001"}  # 학교, 아파트
 # limitDetail 또는 useTime에 이 문구가 있으면 limitYn=N/kindDetail 분류와 무관하게 제외
 # (아파트 등이 kindDetail로 정확히 분류 안 돼 있는 경우가 있어 텍스트로 한 번 더 거른다)
-NON_OPEN_KEYWORDS = ("비개방", "외부인", "입주민", "거주자", "거부", "불가")
+NON_OPEN_KEYWORDS = ("비개방", "외부인", "입주민", "거주자", "금지", "불가")
 
 
 def passes_filter(item):
