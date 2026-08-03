@@ -1,4 +1,4 @@
-name: Update EV Charger Status (delta)
+name: Update EV Charger Status
 
 on:
   schedule:
