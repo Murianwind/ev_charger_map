@@ -1,9 +1,6 @@
 name: Update EV Charger Data (full)
 
 on:
-  schedule:
-    # 매일 04:00 KST (UTC 19:00 전날) - 전국 전체 정보 재수집
-    - cron: "0 19 * * *"
   workflow_dispatch: {}
 
 permissions:
