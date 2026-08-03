@@ -5,7 +5,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-API_BASE = "http://apis.data.go.kr/B552584/EvCharger"
+API_BASE = "https://apis.data.go.kr/B552584/EvCharger"
 MAX_RETRIES = 3
 RETRY_WAIT_SEC = 3
 
