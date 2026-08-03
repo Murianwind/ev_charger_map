@@ -251,6 +251,8 @@ map.addLayer(clusterGroup);
 let allFeatures = [];
 let dataLoaded = false;
 let moveEndTimer = null;
+let lastRenderCenter = null;
+const MIN_RERENDER_MOVE_KM = 1; // 중심이 이 거리 이상 움직였을 때만 다시 그린다
 
 // 두 좌표 간 거리(km), Haversine 공식
 function haversineKm(lat1, lng1, lat2, lng2) {
@@ -279,7 +281,7 @@ function zoomForRadius(center, radiusKm) {
     return 10;
   }
 
-  const desiredPixelRadius = shortSidePx * 0.5; // 반경 원이 화면 짧은 변의 ~68%를 채우도록
+  const desiredPixelRadius = shortSidePx * 0.5; // 반경 원이 화면 짧은 변의 ~84%를 채우도록
   const metersPerPixel = (radiusKm * 1000) / desiredPixelRadius;
   const zoom =
     Math.log2((156543.03392 * Math.cos((center.lat * Math.PI) / 180)) / metersPerPixel);
@@ -380,6 +382,7 @@ function renderWithinRadius(center, radiusKm) {
 
   clusterGroup.clearLayers();
   clusterGroup.addLayers(filtered.map(makeMarker));
+  lastRenderCenter = center;
 
   const scopeLabel = radiusKm ? `현재 지도 중심 반경 ${radiusKm}km` : "전국";
   statusBar.textContent = `${scopeLabel} 내 충전소 ${filtered.length.toLocaleString()}개소 표시 중`;
@@ -391,7 +394,14 @@ map.on("moveend", () => {
   if (!dataLoaded) return;
   if (moveEndTimer) clearTimeout(moveEndTimer);
   moveEndTimer = setTimeout(() => {
-    renderWithinRadius(map.getCenter(), RADIUS_KM);
+    const center = map.getCenter();
+    if (
+      lastRenderCenter &&
+      haversineKm(lastRenderCenter.lat, lastRenderCenter.lng, center.lat, center.lng) < MIN_RERENDER_MOVE_KM
+    ) {
+      return; // 중심이 거의 안 움직였으면(줌만 살짝 바뀐 경우 등) 다시 그리지 않는다
+    }
+    renderWithinRadius(center, RADIUS_KM);
   }, MOVE_SETTLE_DELAY_MS);
 });
 
