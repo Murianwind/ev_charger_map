@@ -2,8 +2,8 @@ name: Update EV Charger Status (delta)
 
 on:
   schedule:
-    # 10분 간격 (GitHub 스케줄은 부하가 몰릴 때 몇 분 밀릴 수 있음)
-    - cron: "*/10 * * * *"
+    # 15분 간격 (GitHub 스케줄은 부하가 몰릴 때 몇 분 밀릴 수 있음)
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 permissions:
