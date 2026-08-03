@@ -28,10 +28,10 @@ git remote set-url origin "$GIT_REMOTE"
 # /etc/environment에 적어두고, crontab 항목에서 `. /etc/environment`로 불러온다.
 {
   echo "EV_SERVICE_KEY=${EV_SERVICE_KEY}"
-  echo "EV_STATUS_PERIOD_MIN=15"
+  echo "EV_STATUS_PERIOD_MIN=60"
 } > /etc/environment
 
-echo "[scheduler] cron 시작 (15분마다 상태 갱신, 매일 04:00 KST 전체 갱신)"
+echo "[scheduler] cron 시작 (매시간 상태 갱신, 매일 04:00 KST 전체 갱신)"
 cron
 
 echo "[runner] GitHub Actions 러너 시작"
