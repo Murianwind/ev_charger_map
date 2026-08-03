@@ -1,7 +1,7 @@
 FROM myoung34/github-runner:latest
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends cron python3 \
+    && apt-get install -y --no-install-recommends cron python3 util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 COPY crontab /etc/cron.d/ev-charger-cron
