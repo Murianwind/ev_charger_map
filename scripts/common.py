@@ -44,7 +44,7 @@ def call_api(operation, params, page_no):
             with urllib.request.urlopen(req, timeout=60) as resp:
                 body = resp.read().decode("utf-8")
             return json.loads(body)
-        except (urllib.error.URLError, json.JSONDecodeError) as err:
+        except (OSError, json.JSONDecodeError) as err:
             last_err = err
             print(f"  경고: {operation} 페이지 {page_no} 요청 실패({attempt}/{MAX_RETRIES}): {err}")
             time.sleep(RETRY_WAIT_SEC)
