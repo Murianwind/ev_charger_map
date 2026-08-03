@@ -13,21 +13,24 @@
   3) chgerType in {02, 09, 10} : AC완속 / NACS / DC콤보+NACS
   4) delYn != "Y"              : 삭제(철거)된 충전기 제외
   5) kindDetail이 학교/아파트가 아닐 것
-  6) limitDetail/useTime에 "비개방","외부인","입주민","거주자" 등의 문구가 없을 것
-     (아파트 등이 kindDetail로 정확히 분류 안 돼 있는 경우가 있어 텍스트로 한 번 더 거른다)
+  6) limitDetail/useTime에 비개방 관련 문구가 없을 것
 
-  예외: busiId == "TE"(테슬라)인 충전기는 위 조건과 무관하게 전부 포함한다
-  (단, 삭제된 충전기는 테슬라여도 제외).
+테슬라 슈퍼차저는 한국환경공단 API에 실질적으로 데이터가 없어서(실측 0건),
+supercharge.info에서 별도로 받아와 합친다 (fetch_tesla_superchargers).
 """
 import json
 import os
 import sys
 from collections import OrderedDict
 
-from common import ALLOWED_CHGER_TYPES, CHGER_TYPE_NAMES, STAT_NAMES, fetch_all, to_float
-
-
-TESLA_BUSI_ID = "TE"
+from common import (
+    ALLOWED_CHGER_TYPES,
+    CHGER_TYPE_NAMES,
+    STAT_NAMES,
+    fetch_all,
+    fetch_tesla_superchargers,
+    to_float,
+)
 
 
 def get_service_key():
@@ -41,16 +44,16 @@ def get_service_key():
 EXCLUDED_KIND_DETAILS = {"J001", "H001"}  # 학교, 아파트
 # limitDetail 또는 useTime에 이 문구가 있으면 limitYn=N/kindDetail 분류와 무관하게 제외
 # (아파트 등이 kindDetail로 정확히 분류 안 돼 있는 경우가 있어 텍스트로 한 번 더 거른다)
-NON_OPEN_KEYWORDS = ("비개방", "외부인", "입주민", "거주자", "금지", "불가")
+# - "불가"/"금지": "사용불가"/"이용불가"/"출입금지" 등 부정 표현을 폭넓게 잡음 (오탐 위험 낮음)
+# - "비개방": 실제 관측된 문구("비개방(업무차량전용)")
+# - "거주자"/"입주민"/"외부인": 공식 가이드 예시("거주자외")와 실제 관측 문구("외부인 사용불가",
+#   "입주민만 사용가능 거주자 외출입제한") 둘 다 커버하기 위해 유지
+NON_OPEN_KEYWORDS = ("비개방", "불가", "금지", "외부인", "입주민", "거주자")
 
 
 def passes_filter(item):
     if item.get("delYn") == "Y":
         return False
-
-    if item.get("busiId") == TESLA_BUSI_ID:
-        # 테슬라 슈퍼차저는 다른 조건과 무관하게 무조건 전부 포함
-        return True
 
     if item.get("kindDetail") in EXCLUDED_KIND_DETAILS:
         return False
@@ -106,9 +109,6 @@ def build_geojson(items):
                 "chargers": [],
             }
 
-        if item.get("busiId") == TESLA_BUSI_ID:
-            stations[stat_id]["isTesla"] = True
-
         stations[stat_id]["chargers"].append(
             {
                 "chgerId": item.get("chgerId", ""),
@@ -144,6 +144,18 @@ def main():
     service_key = get_service_key()
     items = fetch_all("getChargerInfo", {"serviceKey": service_key})
     geojson = build_geojson(items)
+
+    tesla_stations = fetch_tesla_superchargers()
+    for s in tesla_stations:
+        lat, lng = s["lat"], s["lng"]
+        props = {k: v for k, v in s.items() if k not in ("lat", "lng")}
+        geojson["features"].append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lng, lat]},
+                "properties": props,
+            }
+        )
 
     out_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "docs", "data", "chargers.geojson")
