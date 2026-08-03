@@ -10,7 +10,6 @@ services:
       ACCESS_TOKEN: "${ACCESS_TOKEN}"
       LABELS: self-hosted,home-pc
       RUNNER_WORKDIR: /tmp/runner/work
-      EPHEMERAL: "false"
       EV_SERVICE_KEY: "${EV_SERVICE_KEY}"
     volumes:
       - runner-work:/tmp/runner/work
