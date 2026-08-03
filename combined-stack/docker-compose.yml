@@ -7,11 +7,11 @@ services:
       RUNNER_NAME: home-pc-runner
       RUNNER_SCOPE: repo
       REPO_URL: https://github.com/Murianwind/ev_charger_map
-      ACCESS_TOKEN: "여기에_PAT_붙여넣기"
+      ACCESS_TOKEN: "${ACCESS_TOKEN}"
       LABELS: self-hosted,home-pc
       RUNNER_WORKDIR: /tmp/runner/work
       EPHEMERAL: "false"
-      EV_SERVICE_KEY: "여기에_공공데이터포털_서비스키"
+      EV_SERVICE_KEY: "${EV_SERVICE_KEY}"
     volumes:
       - runner-work:/tmp/runner/work
       - repo-data:/repo
