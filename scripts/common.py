@@ -36,6 +36,12 @@ STAT_NAMES = {
 
 def call_api(operation, params, page_no):
     query = {**params, "pageNo": page_no}
+    # serviceKey가 이미 URL 인코딩된 형태(data.go.kr "Encoding" 키)로 저장돼 있으면
+    # urlencode()가 %를 다시 %25로 인코딩해서 키가 깨진다(이중 인코딩).
+    # 먼저 unquote로 한 번 풀어두면, 원본(Decoding) 키든 인코딩된 키든
+    # urlencode()에서 정확히 한 번만 인코딩되어 항상 같은 결과가 나온다.
+    if "serviceKey" in query:
+        query["serviceKey"] = urllib.parse.unquote(query["serviceKey"])
     url = f"{API_BASE}/{operation}?{urllib.parse.urlencode(query)}"
     last_err = None
     for attempt in range(1, MAX_RETRIES + 1):
