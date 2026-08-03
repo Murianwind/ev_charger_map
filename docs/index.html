@@ -107,6 +107,19 @@
     border-radius: 8px;
   }
 
+  .leaflet-popup-content {
+    max-height: 55vh;
+    overflow-y: auto;
+    margin: 12px 16px;
+  }
+
+  .leaflet-popup-close-button {
+    font-size: 20px !important;
+    padding: 8px !important;
+    width: 30px !important;
+    height: 30px !important;
+  }
+
   .popup {
     font-size: 13px;
     line-height: 1.5;
@@ -354,7 +367,13 @@ function makeMarker(feature) {
     fillOpacity: 0.95,
     className: "marker-dot",
   });
-  marker.bindPopup(buildPopup(props));
+  marker.bindPopup(buildPopup(props), {
+    maxWidth: 280,
+    maxHeight: Math.round(window.innerHeight * 0.55),
+    autoPan: true,
+    autoPanPadding: [16, 16],
+    closeButton: true,
+  });
   return marker;
 }
 
