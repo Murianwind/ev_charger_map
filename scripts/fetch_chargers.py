@@ -152,7 +152,8 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(geojson, f, ensure_ascii=False)
 
-    print(f"완료: 충전소 {len(geojson['features'])}개소 저장 → {out_path}")
+    tesla_count = sum(1 for f in geojson["features"] if f["properties"].get("isTesla"))
+    print(f"완료: 충전소 {len(geojson['features'])}개소 저장 (이 중 테슬라 {tesla_count}개소) → {out_path}")
 
 
 if __name__ == "__main__":
