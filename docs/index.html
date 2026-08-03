@@ -317,6 +317,24 @@ function floorLabel(props) {
 }
 
 function buildPopup(props) {
+  const teslaBadge = props.isTesla
+    ? `<div class="tesla-badge">⚡ 테슬라 슈퍼차저</div>`
+    : "";
+
+  if (props.isTesla) {
+    // supercharge.info는 실시간 사용 가능 여부를 제공하지 않아서,
+    // 개별 커넥터 상태를 지어내지 않고 요약 정보만 보여준다.
+    return `
+      <div class="popup">
+        ${teslaBadge}
+        <h3>${escapeHtml(props.statNm)}</h3>
+        <div class="addr">${escapeHtml(props.addr)} ${escapeHtml(props.addrDetail)}</div>
+        <div class="field"><span class="k">이용시간</span><span class="v">${escapeHtml(props.useTime)}</span></div>
+        <div class="note">충전기 상태 정보 미제공</div>
+        <div class="field"><span class="k">${escapeHtml(props.teslaSummary)}</span></div>
+      </div>`;
+  }
+
   const chargerRows = props.chargers
     .map((c) => {
       const color = STATUS_COLOR[c.stat] || STATUS_COLOR.DEFAULT;
@@ -334,10 +352,6 @@ function buildPopup(props) {
     ? `<div class="note">이용제한 사유(참고): ${escapeHtml(props.limitDetail)}</div>`
     : "";
 
-  const teslaBadge = props.isTesla
-    ? `<div class="tesla-badge">⚡ 테슬라 슈퍼차저</div>`
-    : "";
-
   const limitLabel =
     props.limitYn === "N" ? "없음" : props.limitYn === "Y" ? "있음" : "확인 필요";
   const parkingLabel =
@@ -345,7 +359,6 @@ function buildPopup(props) {
 
   return `
     <div class="popup">
-      ${teslaBadge}
       <h3>${escapeHtml(props.statNm)}</h3>
       <div class="addr">${escapeHtml(props.addr)} ${escapeHtml(props.addrDetail)}</div>
       <div class="field"><span class="k">이용시간</span><span class="v">${escapeHtml(props.useTime)}</span></div>
