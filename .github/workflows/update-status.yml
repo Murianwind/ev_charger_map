@@ -1,9 +1,6 @@
 name: Update EV Charger Status (delta)
 
 on:
-  schedule:
-    # 15분 간격
-    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 permissions:
