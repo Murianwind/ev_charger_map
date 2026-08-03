@@ -230,7 +230,7 @@ const STATUS_COLOR = {
   DEFAULT: "#9a968a", // 통신이상 / 운영중지 / 점검중 / 알수없음
 };
 
-const RADIUS_KM = 20;
+const RADIUS_KM = 5;
 const MOVE_SETTLE_DELAY_MS = 1500; // 지도 이동이 끝난 뒤 이 시간만큼 더 기다렸다가 재표출
 const DEFAULT_CENTER = [36.4, 127.9];
 const DEFAULT_ZOOM = 7;
@@ -251,19 +251,7 @@ map.addLayer(clusterGroup);
 let allFeatures = [];
 let dataLoaded = false;
 let moveEndTimer = null;
-let lastRenderCenter = null;
-const MIN_RERENDER_MOVE_KM = 1; // 중심이 이 거리 이상 움직였을 때만 다시 그린다
-
-// 두 좌표 간 거리(km), Haversine 공식
-function haversineKm(lat1, lng1, lat2, lng2) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
+const MAX_MARKERS = 1500; // 한 번에 그리는 마커 최대 개수 (성능 보호용 캡)
 
 // center를 기준으로, 화면의 짧은 변에 반경 원이 어느 정도 차도록 줌 레벨을 계산한다.
 // map.getSize()는 레이아웃이 아직 안정되기 전에 부르면 엉뚱한(때로는 0에 가까운)
@@ -370,39 +358,32 @@ function makeMarker(feature) {
   return marker;
 }
 
-// center 반경 RADIUS_KM 안의 충전소만 걸러 다시 그린다.
-// radiusKm이 없으면(geolocation 실패 등) 전체를 표시한다.
-function renderWithinRadius(center, radiusKm) {
-  const filtered = radiusKm
-    ? allFeatures.filter((f) => {
-        const [lng, lat] = f.geometry.coordinates;
-        return haversineKm(center.lat, center.lng, lat, lng) <= radiusKm;
-      })
-    : allFeatures;
+// 현재 지도 화면(뷰포트) 안에 들어오는 충전소만 걸러 다시 그린다.
+// 너무 많으면(MAX_MARKERS 초과) 성능 보호를 위해 앞부분만 그리고 안내 문구를 보여준다.
+function renderVisible() {
+  const bounds = map.getBounds();
+  const withinBounds = allFeatures.filter((f) => {
+    const [lng, lat] = f.geometry.coordinates;
+    return bounds.contains([lat, lng]);
+  });
+
+  const capped = withinBounds.length > MAX_MARKERS;
+  const toRender = capped ? withinBounds.slice(0, MAX_MARKERS) : withinBounds;
 
   clusterGroup.clearLayers();
-  clusterGroup.addLayers(filtered.map(makeMarker));
-  lastRenderCenter = center;
+  clusterGroup.addLayers(toRender.map(makeMarker));
 
-  const scopeLabel = radiusKm ? `현재 지도 중심 반경 ${radiusKm}km` : "전국";
-  statusBar.textContent = `${scopeLabel} 내 충전소 ${filtered.length.toLocaleString()}개소 표시 중`;
+  statusBar.textContent = capped
+    ? `현재 화면에 ${withinBounds.length.toLocaleString()}개소 중 ${MAX_MARKERS.toLocaleString()}개만 표시 중 — 더 확대해 보세요`
+    : `현재 화면 내 충전소 ${withinBounds.length.toLocaleString()}개소 표시 중`;
 }
 
 // 사용자가 지도를 이동/확대·축소한 뒤, 동작이 완전히 끝나고 나서
-// MOVE_SETTLE_DELAY_MS만큼 더 기다렸다가 새 중심 기준 반경으로 다시 표출한다.
+// MOVE_SETTLE_DELAY_MS만큼 더 기다렸다가 현재 화면 기준으로 다시 표출한다.
 map.on("moveend", () => {
   if (!dataLoaded) return;
   if (moveEndTimer) clearTimeout(moveEndTimer);
-  moveEndTimer = setTimeout(() => {
-    const center = map.getCenter();
-    if (
-      lastRenderCenter &&
-      haversineKm(lastRenderCenter.lat, lastRenderCenter.lng, center.lat, center.lng) < MIN_RERENDER_MOVE_KM
-    ) {
-      return; // 중심이 거의 안 움직였으면(줌만 살짝 바뀐 경우 등) 다시 그리지 않는다
-    }
-    renderWithinRadius(center, RADIUS_KM);
-  }, MOVE_SETTLE_DELAY_MS);
+  moveEndTimer = setTimeout(renderVisible, MOVE_SETTLE_DELAY_MS);
 });
 
 let userLatLng = null;
@@ -445,7 +426,7 @@ function showUserLocation(center) {
 function goToUserLocation() {
   if (userLatLng) {
     map.setView(userLatLng, zoomForRadius(userLatLng, RADIUS_KM));
-    renderWithinRadius(userLatLng, RADIUS_KM);
+    renderVisible();
   } else {
     requestLocation();
   }
@@ -454,7 +435,7 @@ function goToUserLocation() {
 function requestLocation() {
   if (!navigator.geolocation) {
     statusBar.textContent = "이 브라우저는 위치 정보를 지원하지 않습니다.";
-    renderWithinRadius(map.getCenter(), null);
+    renderVisible();
     return;
   }
   navigator.geolocation.getCurrentPosition(
@@ -462,12 +443,12 @@ function requestLocation() {
       const center = L.latLng(pos.coords.latitude, pos.coords.longitude);
       showUserLocation(center);
       map.setView(center, zoomForRadius(center, RADIUS_KM));
-      renderWithinRadius(center, RADIUS_KM);
+      renderVisible();
     },
     (err) => {
       console.warn("위치 정보를 가져오지 못했습니다:", err.message);
-      statusBar.textContent = "위치 권한이 없어 전국 데이터를 표시합니다.";
-      renderWithinRadius(map.getCenter(), null);
+      statusBar.textContent = "위치 권한이 없어 현재 화면 기준으로 표시합니다.";
+      renderVisible();
     },
     { timeout: 8000, maximumAge: 5 * 60 * 1000 }
   );
