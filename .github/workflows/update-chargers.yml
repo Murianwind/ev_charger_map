@@ -1,4 +1,4 @@
-name: Update EV Charger Data
+name: Update EV Charger Data (full)
 
 on:
   schedule:
@@ -10,17 +10,10 @@ permissions:
   contents: write
 
 jobs:
-  # 여러 러너에서 동시에 시도합니다. 러너마다 다른 IP를 배정받기 때문에,
-  # 특정 IP 대역이 data.go.kr 쪽에서 막혀있어도 병렬 시도 중 하나는
-  # 안 막힌 IP를 받을 확률이 올라갑니다. (weather-calendar와 같은 패턴)
-  fetch:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        attempt: [1, 2, 3, 4, 5]
+  update:
+    runs-on: [self-hosted, home-pc]
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -28,136 +21,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Log runner IP
-        id: getip
-        continue-on-error: true
-        run: |
-          IP=$(curl -s --max-time 10 ifconfig.me || echo "unknown")
-          echo "ip=$IP" >> "$GITHUB_OUTPUT"
-          echo "[attempt ${{ matrix.attempt }}] Runner outbound IP: $IP"
-
-      - name: Run fetch script
-        id: run_script
-        continue-on-error: true
-        timeout-minutes: 8
+      - name: Fetch full charger info
         env:
           EV_SERVICE_KEY: ${{ secrets.EV_SERVICE_KEY }}
         run: python scripts/fetch_chargers.py
 
-      - name: Write attempt report
-        if: always()
+      - name: Commit updated data
         run: |
-          mkdir -p report
-          cat > "report/report-${{ matrix.attempt }}.json" << EOF
-          {"attempt": ${{ matrix.attempt }}, "ip": "${{ steps.getip.outputs.ip }}", "outcome": "${{ steps.run_script.outcome }}"}
-          EOF
-
-      - name: Upload attempt report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: report-attempt-${{ matrix.attempt }}
-          path: report/report-${{ matrix.attempt }}.json
-          retention-days: 7
-
-      # API를 실제로 받아온(성공한) 시도만 artifact로 올립니다.
-      - name: Upload result (only if fetch succeeded)
-        if: steps.run_script.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: chargers-attempt-${{ matrix.attempt }}
-          path: docs/data/chargers.geojson
-          retention-days: 1
-
-  # fetch의 병렬 시도 중 성공한 게 하나라도 있으면 그걸로 커밋하고,
-  # 전부 실패했으면 기존 파일 그대로 두고(=변경 없음) 잡 실패로 표시합니다.
-  commit:
-    needs: fetch
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download any successful attempt
-        id: download
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: chargers-attempt-*
-          path: attempts
-          merge-multiple: true
-
-      - name: Download all attempt reports
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: report-attempt-*
-          path: reports
-          merge-multiple: true
-
-      - name: Build IP success/failure summary
-        if: always()
-        run: |
-          {
-            echo "### 이번 실행 IP별 결과"
-            echo ""
-            echo "| Attempt | IP | 결과 |"
-            echo "|---|---|---|"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          success_count=0
-          total_count=0
-          if [ -d reports ]; then
-            for f in $(ls reports/report-*.json 2>/dev/null | sort -t- -k2 -n); do
-              attempt=$(jq -r '.attempt' "$f")
-              ip=$(jq -r '.ip' "$f")
-              outcome=$(jq -r '.outcome' "$f")
-              total_count=$((total_count + 1))
-              if [ "$outcome" = "success" ]; then
-                mark="✅ 성공"
-                success_count=$((success_count + 1))
-              else
-                mark="❌ 실패"
-              fi
-              echo "| $attempt | $ip | $mark |" >> "$GITHUB_STEP_SUMMARY"
-            done
-          fi
-          if [ "$total_count" -eq 0 ]; then
-            echo "| - | (리포트 없음) | - |" >> "$GITHUB_STEP_SUMMARY"
-          fi
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**${success_count} / ${total_count} 성공**" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Use a successful attempt if available
-        id: pick
-        run: |
-          if [ -f "attempts/chargers.geojson" ]; then
-            echo "성공한 시도를 찾았습니다. chargers.geojson을 교체합니다."
-            mkdir -p docs/data
-            cp attempts/chargers.geojson docs/data/chargers.geojson
-            echo "any_success=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "5번의 시도 모두 API 호출에 실패했습니다. 기존 chargers.geojson을 그대로 둡니다."
-            echo "any_success=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Commit and push changes
-        if: steps.pick.outputs.any_success == 'true'
-        run: |
-          KST_TIME=$(TZ='Asia/Seoul' date '+%Y-%m-%d %H:%M:%S')
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/data/chargers.geojson
-          if [ -n "$(git status --porcelain)" ]; then
-            git commit -m "chore: full charger data refresh [$KST_TIME KST]"
-            git push
-          else
-            echo "No changes to commit"
-          fi
-
-      - name: Fail job if every attempt was blocked
-        if: steps.pick.outputs.any_success == 'false'
-        run: |
-          echo "::error::5번의 병렬 시도 모두 API 호출에 실패해서 기존 데이터를 유지했습니다."
-          exit 1
+          git diff --cached --quiet || git commit -m "chore: full charger data refresh"
+          git push
