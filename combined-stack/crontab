@@ -1,0 +1,2 @@
+*/10 * * * * root . /etc/environment; /repo_scripts/run_status.sh >> /var/log/cron.log 2>&1
+0 19 * * * root . /etc/environment; /repo_scripts/run_full.sh >> /var/log/cron.log 2>&1

@@ -1,0 +1,21 @@
+services:
+  ev-charger-all-in-one:
+    build: .
+    container_name: ev-charger-all-in-one
+    restart: unless-stopped
+    environment:
+      RUNNER_NAME: home-pc-runner
+      RUNNER_SCOPE: repo
+      REPO_URL: https://github.com/Murianwind/ev_charger_map
+      ACCESS_TOKEN: "여기에_PAT_붙여넣기"
+      LABELS: self-hosted,home-pc
+      RUNNER_WORKDIR: /tmp/runner/work
+      EPHEMERAL: "false"
+      EV_SERVICE_KEY: "여기에_공공데이터포털_서비스키"
+    volumes:
+      - runner-work:/tmp/runner/work
+      - repo-data:/repo
+
+volumes:
+  runner-work:
+  repo-data:
