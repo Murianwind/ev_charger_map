@@ -3,7 +3,6 @@ services:
     build: .
     container_name: ev-charger-all-in-one
     restart: unless-stopped
-    entrypoint: ["sleep", "infinity"]  # 디버깅 끝나면 이 줄 지우세요
     environment:
       RUNNER_NAME: home-pc-runner
       RUNNER_SCOPE: repo
