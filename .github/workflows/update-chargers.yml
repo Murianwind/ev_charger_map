@@ -1,0 +1,40 @@
+name: Update EV Charger Data (full)
+
+on:
+  schedule:
+    # 매일 04:00 KST (UTC 19:00 전날) - 전국 전체 정보 재수집
+    - cron: "0 19 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ev-charger-data
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch full charger info
+        env:
+          EV_SERVICE_KEY: ${{ secrets.EV_SERVICE_KEY }}
+        run: python scripts/fetch_chargers.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git add docs/data/chargers.geojson
+          git diff --cached --quiet || git commit -m "chore: full charger data refresh"
+          git push
