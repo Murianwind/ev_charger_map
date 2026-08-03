@@ -65,6 +65,21 @@
     margin-top: 2px;
   }
 
+  .filter-chip {
+    cursor: pointer;
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
+
+  .filter-chip:hover {
+    background: #e8e6df;
+  }
+
+  .filter-chip.active {
+    background: var(--ink);
+    color: #fff;
+  }
+
   .legend {
     display: flex;
     align-items: center;
@@ -224,7 +239,12 @@
   <header>
     <div>
       <h1>전국 테슬라 충전 지도</h1>
-      <div class="sub">AC완속 / NACS / DC콤보+NACS / 수퍼차저</div>
+      <div class="sub" id="type-filter">
+        <span class="filter-chip" data-type="02">AC완속</span> /
+        <span class="filter-chip" data-type="09">NACS</span> /
+        <span class="filter-chip" data-type="10">DC콤보+NACS</span> /
+        <span class="filter-chip" data-type="TESLA">수퍼차저</span>
+      </div>
     </div>
     <div class="legend">
       <span class="chip"><span class="dot" style="background:var(--available)"></span>충전가능</span>
@@ -270,6 +290,18 @@ let moveEndTimer = null;
 let popupOpen = false;
 const MAX_MARKERS = 1500; // 한 번에 그리는 마커 최대 개수 (성능 보호용 캡)
 const POPUP_MAX_WIDTH = Math.max(220, Math.min(280, window.innerWidth - 40));
+
+// 헤더의 AC완속/NACS/DC콤보+NACS/수퍼차저 칩 필터. 여러 개 선택하면
+// 그중 하나라도 해당하는 충전소를 전부 표시한다(합집합). 아무것도
+// 선택 안 하면(기본값) 전체를 표시한다.
+const activeTypeFilters = new Set();
+
+function stationMatchesTypeFilter(feature) {
+  if (activeTypeFilters.size === 0) return true;
+  const props = feature.properties;
+  if (activeTypeFilters.has("TESLA") && props.isTesla) return true;
+  return (props.chargers || []).some((c) => activeTypeFilters.has(c.chgerType));
+}
 
 // center를 기준으로, 화면의 짧은 변에 반경 원이 어느 정도 차도록 줌 레벨을 계산한다.
 // map.getSize()는 레이아웃이 아직 안정되기 전에 부르면 엉뚱한(때로는 0에 가까운)
@@ -401,7 +433,7 @@ function renderVisible() {
   const bounds = map.getBounds();
   const withinBounds = allFeatures.filter((f) => {
     const [lng, lat] = f.geometry.coordinates;
-    return bounds.contains([lat, lng]);
+    return bounds.contains([lat, lng]) && stationMatchesTypeFilter(f);
   });
 
   const capped = withinBounds.length > MAX_MARKERS;
@@ -516,6 +548,20 @@ const LocateControl = L.Control.extend({
   },
 });
 map.addControl(new LocateControl());
+
+document.querySelectorAll(".filter-chip").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    const type = chip.dataset.type;
+    if (activeTypeFilters.has(type)) {
+      activeTypeFilters.delete(type);
+      chip.classList.remove("active");
+    } else {
+      activeTypeFilters.add(type);
+      chip.classList.add("active");
+    }
+    if (dataLoaded) renderVisible();
+  });
+});
 
 async function loadData() {
   statusBar.textContent = "불러오는 중...";
