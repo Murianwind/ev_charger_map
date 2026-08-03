@@ -1,0 +1,41 @@
+name: Update EV Charger Status (delta)
+
+on:
+  schedule:
+    # 10분 간격 (GitHub 스케줄은 부하가 몰릴 때 몇 분 밀릴 수 있음)
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ev-charger-data
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch status delta
+        env:
+          EV_SERVICE_KEY: ${{ secrets.EV_SERVICE_KEY }}
+          EV_STATUS_PERIOD_MIN: "10"
+        run: python scripts/fetch_status.py
+
+      - name: Commit status changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git add docs/data/chargers.geojson
+          git diff --cached --quiet || git commit -m "chore: charger status delta update"
+          git push
