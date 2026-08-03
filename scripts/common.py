@@ -6,7 +6,7 @@ import urllib.parse
 import urllib.request
 
 API_BASE = "https://apis.data.go.kr/B552584/EvCharger"
-MAX_RETRIES = 3
+MAX_RETRIES = 1
 RETRY_WAIT_SEC = 3
 
 ALLOWED_CHGER_TYPES = {"02", "09", "10"}  # AC완속 / NACS / DC콤보+NACS
