@@ -184,22 +184,38 @@ def to_float(value):
         return None
 
 
-# 원본 addr에 "지번주소+시설명"이 붙어서 오는 경우가 있다
-# (예: "대전광역시 유성구 전민동 346-3전민동 제2공영주차장 -").
-# 지번 형태(숫자-숫자, 예: 346-3)가 마지막으로 나오는 지점을 기준으로 잘라서
-# 주소와 시설명을 분리한다. "제2공영주차장"처럼 시설명에 숫자가 섞여있어도
-# 하이픈이 없으면 매칭 안 되게 해서 오탐을 피한다.
+# 원본 addr에 "주소+시설명"이 붙어서 오는 경우가 있다
+# (예: "대전광역시 유성구 전민동 346-3전민동 제2공영주차장 -",
+#      "대전광역시 유성구 북유성대로 172죽동 공영주차장 2~3층",
+#      "대전광역시 유성구 덕명동 595학하지구 제5공영주차장").
+# 주소가 끝나는 지점을 우선순위대로 찾는다:
+#   1. 지번(숫자-숫자, 예: 346-3) — 하이픈이 있어서 "제2공영주차장" 같은
+#      시설명 속 숫자와 헷갈리지 않는다.
+#   2. 도로명(로/길 + 숫자, 예: "북유성대로 172") — 도로명주소는 하이픈이
+#      없는 경우가 많아서 별도로 잡는다.
+#   3. (1·2 둘 다 없을 때 최후 수단) "제N"(서수) 형태가 아니면서 숫자
+#      바로 뒤에 한글이 붙어있는 지점 — 하이픈도 "로/길"도 없는 순수
+#      지번(예: "덕명동 595")을 잡기 위함. 이건 오탐 위험이 있어서
+#      1·2가 하나도 안 잡혔을 때만 쓰고, 제일 먼저 나오는 지점만 쓴다
+#      (뒤쪽 시설명 안에도 이 패턴에 걸리는 숫자가 또 있을 수 있어서).
 _LOT_NUMBER_PATTERN = re.compile(r"\d+-\d+")
+_ROAD_NUMBER_PATTERN = re.compile(r"(?:로|길)\s*\d+(?:-\d+)?")
+_BARE_NUMBER_GLUED_PATTERN = re.compile(r"(?<!제)\d+(?=[가-힣])")
 
 
 def split_addr_and_location(addr):
     """(정리된 주소, 뒤에 붙어있던 시설명) 튜플을 반환한다.
     분리할 게 없으면 시설명은 빈 문자열이다.
     """
-    matches = list(_LOT_NUMBER_PATTERN.finditer(addr))
-    if not matches:
-        return addr.strip(" -"), ""
-    split_at = matches[-1].end()
+    strong_matches = list(_LOT_NUMBER_PATTERN.finditer(addr)) + list(_ROAD_NUMBER_PATTERN.finditer(addr))
+    if strong_matches:
+        split_at = max(m.end() for m in strong_matches)
+    else:
+        weak_matches = list(_BARE_NUMBER_GLUED_PATTERN.finditer(addr))
+        if not weak_matches:
+            return addr.strip(" -"), ""
+        split_at = weak_matches[0].end()
+
     address_part = addr[:split_at].strip()
     rest = addr[split_at:].strip(" -").strip()
     return address_part, rest
