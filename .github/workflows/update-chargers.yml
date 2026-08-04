@@ -26,6 +26,7 @@ jobs:
       - name: Fetch charger info
         env:
           EV_SERVICE_KEY: ${{ secrets.EV_SERVICE_KEY }}
+          KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
           FULL_SEED: ${{ inputs.full_seed && '1' || '' }}
         run: python scripts/fetch_chargers.py
 
