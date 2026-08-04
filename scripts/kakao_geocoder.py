@@ -17,6 +17,7 @@ from math import asin, cos, radians, sin, sqrt
 from http_client import fetch_json
 
 KAKAO_GEOCODE_URL = "https://dapi.kakao.com/v2/local/search/address.json"
+KAKAO_COORD2ADDR_URL = "https://dapi.kakao.com/v2/local/geo/coord2address.json"
 
 # 이 거리(km)보다 많이 벌어지면 원본 좌표를 못 믿을 걸로 보고 카카오 좌표로
 # 교체한다. GPS 오차나 지오코딩 자체의 오차 범위를 감안한 여유값이다.
@@ -54,6 +55,34 @@ def geocode_address(addr):
         return float(doc["y"]), float(doc["x"])  # 카카오는 x=경도, y=위도
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def reverse_geocode(lat, lng):
+    """좌표를 한글 주소로 변환한다 (도로명주소 우선, 없으면 지번주소).
+    키가 없거나 실패하거나 결과가 없으면 None을 반환한다 — 테슬라 슈퍼차저처럼
+    영문 주소만 있는 데이터를 한글 주소로 바꿔 표시하기 위한 용도다.
+    """
+    key = os.environ.get("KAKAO_REST_API_KEY")
+    if not key:
+        return None
+
+    url = f"{KAKAO_COORD2ADDR_URL}?x={lng}&y={lat}"
+    try:
+        data = fetch_json(url, extra_headers={"Authorization": f"KakaoAK {key}"})
+    except Exception:  # noqa: BLE001 - 지오코딩 실패는 전체 실행을 막지 않고 건너뛴다
+        return None
+
+    documents = data.get("documents") or []
+    if not documents:
+        return None
+
+    doc = documents[0]
+    road_address = doc.get("road_address") or {}
+    if road_address.get("address_name"):
+        return road_address["address_name"]
+
+    address = doc.get("address") or {}
+    return address.get("address_name") or None
 
 
 def verify_and_correct(addr, lat, lng):

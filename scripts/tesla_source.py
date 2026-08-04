@@ -1,5 +1,6 @@
 """supercharge.info(테슬라 슈퍼차저 커뮤니티 오픈 데이터베이스) 전용 로직."""
 from http_client import fetch_json
+from kakao_geocoder import reverse_geocode
 
 SUPERCHARGE_INFO_URL = "https://supercharge.info/service/supercharge/allSites"
 
@@ -23,6 +24,10 @@ def fetch_tesla_superchargers():
     이 API는 실시간 사용 가능 여부를 제공하지 않아서, 개별 커넥터 상태를
     지어내지 않고 "충전기 N개 (V3 N개) 최대 250kW" 형태의 요약 텍스트
     (teslaSummary)만 만들어 저장한다.
+
+    주소도 영문(state/city/street)만 제공돼서, KAKAO_REST_API_KEY가 설정돼
+    있으면 좌표를 한글 주소로 변환(reverse geocoding)해 표시한다. 키가 없거나
+    변환에 실패하면 기존 영문 state/city를 그대로 쓴다.
     """
     try:
         sites = fetch_json(SUPERCHARGE_INFO_URL)
@@ -64,12 +69,24 @@ def fetch_tesla_superchargers():
         raw_name = site.get("name") or "테슬라 수퍼차저"
         station_name = raw_name.replace(", South Korea", "").replace("South Korea - ", "")
 
+        # supercharge.info의 주소는 영문(state/city/street)뿐이라, 이미 갖고
+        # 있는 좌표로 카카오 좌표->한글주소 변환(reverse geocoding)을 해서
+        # 한글 주소로 바꿔 보여준다. 카카오 키가 없거나 실패하면 기존처럼
+        # 영문 state/city를 그대로 쓴다.
+        korean_addr = reverse_geocode(lat, lng)
+        if korean_addr:
+            display_addr = korean_addr
+            display_addr_detail = ""
+        else:
+            display_addr = " ".join(filter(None, [addr.get("state"), addr.get("city")]))
+            display_addr_detail = addr.get("street") or ""
+
         stations.append(
             {
                 "statId": f"TESLA-{site.get('id')}",
                 "statNm": station_name,
-                "addr": " ".join(filter(None, [addr.get("state"), addr.get("city")])),
-                "addrDetail": addr.get("street") or "",
+                "addr": display_addr,
+                "addrDetail": display_addr_detail,
                 "location": site.get("facilityName") or "",
                 "useTime": site.get("hours") or "24시간 이용가능",
                 "busiNm": "테슬라",
