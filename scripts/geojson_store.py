@@ -51,3 +51,23 @@ def replace_tesla(geojson, tesla_stations):
     fresh = [station_to_feature(s) for s in tesla_stations]
     geojson["features"] = kept + fresh
     return geojson
+
+
+def prune_orphaned(geojson, valid_zcodes):
+    """테슬라도 아니고 유효한 지역 코드 목록에도 없는 feature를 제거한다.
+
+    지역별 부분 교체(replace_regions)는 zcode가 일치하는 것만 갈아치우는
+    방식이라, zcode 필드 자체가 없는 항목(예: 초기 개발 중 넣어뒀던 샘플
+    데이터)은 어느 요일 로테이션에도 안 걸려서 영원히 안 지워지는 문제가
+    있었다. zcode가 유효한 16개 지역 코드 중 어디에도 속하지 않으면
+    "API로 정상적으로 받은 게 아니다"로 보고 정리한다.
+    """
+    valid = set(valid_zcodes)
+    before = len(geojson["features"])
+    geojson["features"] = [
+        f
+        for f in geojson["features"]
+        if f["properties"].get("isTesla") or f["properties"].get("zcode") in valid
+    ]
+    removed = before - len(geojson["features"])
+    return geojson, removed

@@ -23,8 +23,15 @@ import os
 import sys
 from datetime import datetime
 
-from geojson_store import GEOJSON_PATH, load_geojson, replace_regions, replace_tesla, save_geojson
-from gov_charger_api import DAY_ZCODE_GROUPS, fetch_region
+from geojson_store import (
+    GEOJSON_PATH,
+    load_geojson,
+    prune_orphaned,
+    replace_regions,
+    replace_tesla,
+    save_geojson,
+)
+from gov_charger_api import ALL_ZCODES, DAY_ZCODE_GROUPS, fetch_region
 from kst_time import KST, now_kst_iso
 from tesla_source import fetch_tesla_superchargers
 
@@ -52,6 +59,13 @@ def main():
 
     stations = fetch_region(service_key, zcodes)
     geojson = load_geojson()
+
+    # zcode가 유효한 16개 지역 코드 어디에도 없는 오래된/잘못된 항목(예: 초기
+    # 개발 중 넣어뒀던 샘플 데이터)을 정리한다. 이런 항목은 어느 요일
+    # 로테이션에도 안 걸려서 replace_regions만으로는 영원히 안 지워진다.
+    geojson, pruned_count = prune_orphaned(geojson, ALL_ZCODES)
+    if pruned_count:
+        print(f"정리: 유효 지역 코드가 없는 오래된 항목 {pruned_count}건 제거")
 
     zcode_set = set(zcodes)
     existing_count = sum(1 for f in geojson["features"] if f["properties"].get("zcode") in zcode_set)

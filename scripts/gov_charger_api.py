@@ -97,6 +97,10 @@ DAY_ZCODE_GROUPS = [
     ["27", "31"],  # 일: 대구, 울산
 ]
 
+# 유효한 지역 코드 16개를 평평한 집합으로도 노출한다(geojson_store.prune_orphaned에서
+# "이 zcode 중 어디에도 없으면 정상 데이터가 아니다"를 판단하는 데 쓴다).
+ALL_ZCODES = {z for group in DAY_ZCODE_GROUPS for z in group}
+
 
 def _build_url(operation, service_key, page_no, num_of_rows, extra_params):
     params = {
