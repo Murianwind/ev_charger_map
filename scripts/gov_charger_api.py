@@ -7,12 +7,14 @@
 - 일일 호출 한도 초과 시 다음날 자정(KST)까지 자동으로 재시도를 쉬는 쿨다운
 """
 import os
+import re
 import time
 import urllib.parse
 from collections import OrderedDict
 from datetime import datetime, timedelta
 
 from http_client import QuotaExceededError, fetch_json
+from kakao_geocoder import verify_and_correct
 from kst_time import now_kst
 
 API_BASE = "https://apis.data.go.kr/B552584/EvCharger"
@@ -73,10 +75,12 @@ STAT_NAMES = {
 EXCLUDED_KIND_DETAILS = {"J001", "H001"}  # 학교, 아파트
 # limitDetail 또는 useTime에 이 문구가 있으면 limitYn=N/kindDetail 분류와 무관하게 제외
 # (아파트 등이 kindDetail로 정확히 분류 안 돼 있는 경우가 있어 텍스트로 한 번 더 거른다).
-# "불가"/"금지"는 "사용불가"/"이용불가"/"출입금지" 등을 폭넓게 잡는다(오탐 위험 낮음).
-# "거주자"/"입주민"/"외부인"은 가이드 공식 예시("거주자외")와 실제 관측 문구
-# ("외부인 사용불가", "입주민만 사용가능 거주자 외출입제한")를 커버한다.
-NON_OPEN_KEYWORDS = ("비개방", "불가", "금지", "외부인", "입주민", "거주자")
+# - "불가"/"금지": "사용불가"/"이용불가"/"출입금지" 등을 폭넓게 잡는다(오탐 위험 낮음).
+# - "거주자"/"입주민"/"외부인": 가이드 공식 예시("거주자외")와 실제 관측 문구
+#   ("외부인 사용불가", "입주민만 사용가능 거주자 외출입제한")를 커버한다.
+# - "제한될 수": "시설 상황에 따라 이용이 제한될 수 있음"처럼 조건부/불확실한
+#   제한 문구를 커버한다 (실제로 이용 불가했던 사례에서 발견).
+NON_OPEN_KEYWORDS = ("비개방", "불가", "금지", "외부인", "입주민", "거주자", "제한될 수")
 
 # 가이드 문서 공식 zcode(시도 코드) 표. 전국을 매번 한 번에 스캔하면 하루 API
 # 호출 한도(1,000건)를 계속 위태롭게 넘나들게 되어, 요일별로 나눠 담당한다.
@@ -176,18 +180,88 @@ def to_float(value):
         return None
 
 
+# 원본 addr에 "지번주소+시설명"이 붙어서 오는 경우가 있다
+# (예: "대전광역시 유성구 전민동 346-3전민동 제2공영주차장 -").
+# 지번 형태(숫자-숫자, 예: 346-3)가 마지막으로 나오는 지점을 기준으로 잘라서
+# 주소와 시설명을 분리한다. "제2공영주차장"처럼 시설명에 숫자가 섞여있어도
+# 하이픈이 없으면 매칭 안 되게 해서 오탐을 피한다.
+_LOT_NUMBER_PATTERN = re.compile(r"\d+-\d+")
+
+
+def split_addr_and_location(addr):
+    """(정리된 주소, 뒤에 붙어있던 시설명) 튜플을 반환한다.
+    분리할 게 없으면 시설명은 빈 문자열이다.
+    """
+    matches = list(_LOT_NUMBER_PATTERN.finditer(addr))
+    if not matches:
+        return addr.strip(" -"), ""
+    split_at = matches[-1].end()
+    address_part = addr[:split_at].strip()
+    rest = addr[split_at:].strip(" -").strip()
+    return address_part, rest
+
+
+# addr 텍스트에 이 지역명이 있으면, 좌표가 대략 이 사각 범위(lat_min, lat_max,
+# lng_min, lng_max) 안에 있어야 한다. 정확한 행정경계가 아니라 넉넉한 사각형
+# 근사치라, 경계 지역에서는 드물게 오탐/누락이 있을 수 있다 — 그래도 "대전
+# 주소인데 좌표는 이천"처럼 완전히 딴 지역으로 튄 경우는 확실히 잡아낸다.
+PROVINCE_BOUNDS = {
+    "서울": (37.42, 37.70, 126.76, 127.18),
+    "인천": (37.20, 37.75, 126.05, 126.80),
+    "경기": (36.90, 38.30, 126.35, 127.85),
+    "강원": (37.00, 38.65, 127.55, 129.40),
+    "충청북도": (36.00, 37.20, 127.30, 128.30),
+    "충북": (36.00, 37.20, 127.30, 128.30),
+    "충청남도": (35.90, 37.05, 126.10, 127.55),
+    "충남": (35.90, 37.05, 126.10, 127.55),
+    "대전": (36.20, 36.50, 127.25, 127.55),
+    "세종": (36.42, 36.72, 127.10, 127.40),
+    "전라북도": (35.55, 36.15, 126.40, 127.75),
+    "전북": (35.55, 36.15, 126.40, 127.75),
+    "전라남도": (33.90, 35.55, 125.90, 127.85),
+    "전남": (33.90, 35.55, 125.90, 127.85),
+    "광주": (35.00, 35.30, 126.65, 127.00),
+    "경상북도": (35.65, 37.15, 128.15, 129.65),
+    "경북": (35.65, 37.15, 128.15, 129.65),
+    "대구": (35.65, 36.05, 128.35, 128.75),
+    "경상남도": (34.75, 35.85, 127.50, 129.30),
+    "경남": (34.75, 35.85, 127.50, 129.30),
+    "부산": (34.85, 35.40, 128.75, 129.35),
+    "울산": (35.35, 35.75, 129.10, 129.55),
+    "제주": (33.10, 33.60, 126.05, 126.98),
+}
+
+
+def coordinates_plausible(addr, lat, lng):
+    """addr가 말하는 지역과 실제 (lat, lng)가 대략 맞는지 확인한다.
+    addr에서 알아볼 수 있는 지역명이 없으면 판단하지 않고 통과시킨다
+    (틀렸다고 확신할 근거가 없을 때 잘못 걸러내지 않기 위함).
+    """
+    for province, (lat_min, lat_max, lng_min, lng_max) in PROVINCE_BOUNDS.items():
+        if province in addr:
+            return lat_min <= lat <= lat_max and lng_min <= lng <= lng_max
+    return True
+
+
 def build_stations(items):
     """필터를 통과한 item들을 statId 기준으로 묶어 station dict 리스트로 만든다.
     (GeoJSON feature 변환은 geojson_store의 책임이라 여기선 순수 데이터만 만든다.)
     """
     stations = OrderedDict()
+    skipped_stat_ids = set()  # 좌표 문제로 제외 결정된 충전소(같은 충전소의
+                               # 다른 커넥터 item이 뒤에 또 나와도 다시 검사 안 함)
     skipped_bad_coord = 0
+    skipped_coord_mismatch = 0
+    corrected_by_kakao = 0
 
     for item in items:
         if not passes_filter(item):
             continue
 
         stat_id = item.get("statId")
+        if stat_id in skipped_stat_ids:
+            continue
+
         lat = to_float(item.get("lat"))
         lng = to_float(item.get("lng"))
         if not stat_id or lat is None or lng is None:
@@ -195,12 +269,38 @@ def build_stations(items):
             continue
 
         if stat_id not in stations:
+            # 충전소 하나에 커넥터가 여러 개면 같은 statId로 여러 번 나오는데,
+            # 주소 정리/지오코딩은 처음 등장할 때 딱 한 번만 한다 (안 그러면
+            # 커넥터 개수만큼 같은 주소를 카카오에 중복 조회하게 된다).
+            addr, extracted_location = split_addr_and_location(item.get("addr", ""))
+
+            # 카카오 지오코딩으로 좌표를 검증/보정한다 (KAKAO_REST_API_KEY가
+            # 있을 때만 실제로 호출됨). 뒤섞인 원본 대신 정리된 주소를 보내야
+            # 인식률이 올라간다. 지오코딩이 실패하면(키 미설정, 주소 인식 불가
+            # 등) 기존의 대략적인 도(道) 사각형 검증으로 최소한의 안전망만
+            # 적용한다.
+            lat, lng, geo_status = verify_and_correct(addr, lat, lng)
+            if geo_status == "corrected":
+                corrected_by_kakao += 1
+                print(f"  안내: 좌표 보정(카카오) — {item.get('statNm', '')} ({addr})")
+            elif geo_status == "unavailable" and not coordinates_plausible(addr, lat, lng):
+                # 원본 API 데이터 자체의 좌표 오류로 보인다 (예: 주소는 대전인데
+                # 좌표는 이천 근방). 필터 텍스트로는 못 잡는 문제라 여기서 걸러낸다.
+                skipped_coord_mismatch += 1
+                print(f"  경고: 좌표 불일치로 제외 — {item.get('statNm', '')} ({addr})")
+                skipped_stat_ids.add(stat_id)
+                continue
+
+            # location은 API 자체가 준 값을 우선하고, 없으면 addr에서 분리해낸
+            # 시설명을 대신 쓴다 (예: "전민동 제2공영주차장").
+            location = item.get("location", "").strip() or extracted_location
+
             stations[stat_id] = {
                 "statId": stat_id,
                 "statNm": item.get("statNm", ""),
-                "addr": item.get("addr", ""),
+                "addr": addr,
                 "addrDetail": item.get("addrDetail", ""),
-                "location": item.get("location", ""),
+                "location": location,
                 "useTime": item.get("useTime", ""),
                 "busiNm": item.get("busiNm", ""),
                 "busiCall": item.get("busiCall", ""),
@@ -234,6 +334,10 @@ def build_stations(items):
 
     if skipped_bad_coord:
         print(f"좌표 누락/오류로 제외: {skipped_bad_coord}건")
+    if skipped_coord_mismatch:
+        print(f"주소-좌표 불일치로 제외: {skipped_coord_mismatch}건")
+    if corrected_by_kakao:
+        print(f"카카오 지오코딩으로 좌표 보정: {corrected_by_kakao}건")
 
     return list(stations.values())
 

@@ -13,6 +13,7 @@ scripts/
 ├── kst_time.py          # 공통 유틸: 한국 표준시(KST) 계산
 ├── http_client.py       # 범용 HTTP 계층: curl 호출, 재시도, 한도초과 감지, 시크릿 마스킹
 ├── gov_charger_api.py   # 환경공단 API 전용: 페이지네이션, 필터, 지역(zcode) 요일별 그룹, 한도초과 쿨다운
+├── kakao_geocoder.py    # 카카오 로컬 API로 좌표 검증/보정 (선택 사항)
 ├── tesla_source.py      # supercharge.info 전용: 테슬라 슈퍼차저 조회
 ├── geojson_store.py     # chargers.geojson 읽기/쓰기, 지역별 부분 교체 병합
 ├── fetch_chargers.py    # 일일 진입점 — 오늘 담당 지역 + 테슬라 갱신
@@ -31,7 +32,7 @@ scripts/
 | 충전기 타입 | `chgerType`가 `02`(AC완속) / `09`(NACS) / `10`(DC콤보+NACS) |
 | 삭제 여부 | `delYn != "Y"` |
 | 시설 구분 | 학교(`kindDetail=J001`), 아파트(`H001`) 제외 |
-| 텍스트 필터 | `limitDetail`/`useTime`에 "비개방"/"불가"/"금지"/"외부인"/"입주민"/"거주자" 포함 시 제외 |
+| 텍스트 필터 | `limitDetail`/`useTime`에 "비개방"/"불가"/"금지"/"외부인"/"입주민"/"거주자"/"제한될 수" 포함 시 제외 |
 
 `limitYn=N`이어도 `limitDetail`에 텍스트가 남아있는 경우, 팝업 하단에 "참고"
 메모로 노출됩니다 (실제로 이 필드 덕분에 위 텍스트 필터 조건들을 찾아냈습니다).
@@ -39,6 +40,23 @@ scripts/
 테슬라 슈퍼차저는 위 조건과 무관하게, `supercharge.info`에서 한국 소재
 "운영중(OPEN)" 상태인 곳만 전부 포함합니다 (환경공단 API엔 테슬라 데이터가
 실질적으로 없습니다 — 실측 결과 전국 0건).
+
+## 좌표 정확도 검증 (카카오 지오코딩)
+
+환경공단 API는 위/경도 값 자체가 틀린 경우가 있습니다 (예: 주소는 대전인데
+좌표는 이천 근방). 매일 갱신하는 지역이 전국이 아니라 하루치 분량(몇백~천
+개소 수준)이라, 충전소마다 카카오 로컬 API(주소 검색)로 지오코딩해서
+검증해도 무료 한도(하루 30만 건)에 전혀 부담이 없습니다.
+
+- **`KAKAO_REST_API_KEY`** 시크릿이 설정돼 있으면: 주소로 지오코딩한 좌표와
+  원본 좌표를 비교해 3km 넘게 차이나면 지오코딩 좌표로 교체합니다.
+- **설정 안 돼 있으면**: 지오코딩을 건너뛰고, 기존의 대략적인 도(道) 사각형
+  범위 검증(`coordinates_plausible`)만 적용합니다 — 완전히 다른 도시로 튄
+  경우는 잡지만, 같은 시/도 안에서의 미세한 좌표 오차는 못 잡습니다.
+
+**설정 방법**: [Kakao Developers](https://developers.kakao.com)에서 앱 생성 →
+"카카오맵" 또는 "로컬" API 사용 동의 → REST API 키 발급 → 저장소
+Settings → Secrets → `KAKAO_REST_API_KEY`로 등록.
 
 ## API 호출 부담 설계
 

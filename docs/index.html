@@ -162,6 +162,14 @@
     word-break: break-word;
   }
 
+  .popup .location {
+    color: #777;
+    font-size: 12px;
+    margin-top: -4px;
+    margin-bottom: 8px;
+    word-break: break-word;
+  }
+
   .popup .field {
     display: flex;
     justify-content: space-between;
@@ -397,10 +405,17 @@ function buildPopup(props) {
   const parkingLabel =
     props.parkingFree === "Y" ? "무료" : props.parkingFree === "N" ? "유료" : "확인 필요";
 
+  // location은 addr에서 분리해낸 시설명(또는 API 자체 값)이라, 주소와
+  // 별도 줄로 보여준다 (예: "전민동 제2공영주차장").
+  const locationLine = props.location
+    ? `<div class="location">${escapeHtml(props.location)}</div>`
+    : "";
+
   return `
     <div class="popup">
       <h3>${escapeHtml(props.statNm)}</h3>
       <div class="addr">${escapeHtml(props.addr)} ${escapeHtml(props.addrDetail)}</div>
+      ${locationLine}
       <div class="field"><span class="k">이용시간</span><span class="v">${escapeHtml(props.useTime)}</span></div>
       <div class="field"><span class="k">운영기관</span><span class="v">${escapeHtml(props.busiNm)}</span></div>
       <div class="field"><span class="k">이용자 제한</span><span class="v">${limitLabel}</span></div>

@@ -38,18 +38,25 @@ class FetchError(RuntimeError):
     """반복 재시도 후에도 실패했을 때 발생하는, 민감정보가 제거된 에러."""
 
 
-def fetch_json(url, quota_marker=None):
+def fetch_json(url, quota_marker=None, extra_headers=None):
     """curl로 url을 요청해 JSON으로 파싱한 결과를 반환한다.
 
     quota_marker가 주어지고 응답 본문에 그 문자열이 있으면 QuotaExceededError를
     즉시 발생시킨다(재시도 없이) — data.go.kr은 한도초과 시 dataType=JSON을
     요청해도 XML 에러 포맷을 그대로 돌려주기 때문에, 이 케이스만 따로 감지한다.
+
+    extra_headers는 {"Authorization": "..."} 같은 추가 헤더가 필요한 API
+    (예: 카카오)를 위한 것이다.
     """
     last_err = "알 수 없는 오류"
+    header_args = []
+    for name, value in (extra_headers or {}).items():
+        header_args += ["-H", f"{name}: {value}"]
+
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             result = subprocess.run(
-                ["curl", "-s", "-A", USER_AGENT, "--max-time", str(CURL_TIMEOUT_SEC), url],
+                ["curl", "-s", "-A", USER_AGENT, "--max-time", str(CURL_TIMEOUT_SEC), *header_args, url],
                 capture_output=True,
                 timeout=CURL_TIMEOUT_SEC + 5,
                 check=True,
