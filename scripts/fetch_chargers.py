@@ -14,17 +14,19 @@ FULL_SEED=1로 실행한다 (모든 지역을 한 번에 순회 — 호출량이
 
 테슬라 슈퍼차저는 별도 무료 API(supercharge.info)라 정부 API 한도와
 무관하게 매일 갱신한다.
+
+일일 호출 한도를 초과하면 gov_charger_api가 다음날 자정까지 쿨다운을
+걸어두고 None을 반환한다 — 이 경우 지역 데이터는 지난 회차 그대로 두고,
+"이번엔 건너뜀"을 메타 정보에 남긴 채 테슬라만 갱신하고 종료한다.
 """
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
-import geojson_store
-from geojson_store import load_geojson, replace_regions, replace_tesla, save_geojson
+from geojson_store import GEOJSON_PATH, load_geojson, replace_regions, replace_tesla, save_geojson
 from gov_charger_api import DAY_ZCODE_GROUPS, fetch_region
+from kst_time import KST, now_kst_iso
 from tesla_source import fetch_tesla_superchargers
-
-KST = timezone(timedelta(hours=9))
 
 
 def get_service_key():
@@ -49,9 +51,24 @@ def main():
     print(f"오늘 담당 지역(zcode): {zcodes}")
 
     stations = fetch_region(service_key, zcodes)
-
     geojson = load_geojson()
-    geojson = replace_regions(geojson, zcodes, stations)
+
+    if stations is not None:
+        geojson = replace_regions(geojson, zcodes, stations)
+        geojson.setdefault("meta", {})["lastFullUpdate"] = {
+            "time": now_kst_iso(),
+            "zcodes": zcodes,
+            "count": len(stations),
+            "status": "ok",
+        }
+        region_count = len(stations)
+    else:
+        geojson.setdefault("meta", {})["lastFullUpdate"] = {
+            "time": now_kst_iso(),
+            "zcodes": zcodes,
+            "status": "skipped_quota_exceeded",
+        }
+        region_count = 0
 
     tesla_stations = fetch_tesla_superchargers()
     geojson = replace_tesla(geojson, tesla_stations)
@@ -60,8 +77,8 @@ def main():
 
     total = len(geojson["features"])
     print(
-        f"완료: 지역 {zcodes} {len(stations)}개소 갱신, "
-        f"테슬라 {len(tesla_stations)}개소, 전체 {total}개소 저장 → {geojson_store.GEOJSON_PATH}"
+        f"완료: 지역 {zcodes} {region_count}개소 갱신, "
+        f"테슬라 {len(tesla_stations)}개소, 전체 {total}개소 저장 → {GEOJSON_PATH}"
     )
 
 

@@ -109,6 +109,13 @@
     border-bottom: 1px solid var(--line);
   }
 
+  #last-updated {
+    font-size: 11px;
+    color: #9a968a;
+    padding: 0 20px 4px;
+    border-bottom: 1px solid var(--line);
+  }
+
   #map {
     flex: 1;
   }
@@ -254,6 +261,7 @@
     </div>
   </header>
   <div id="status-bar">불러오는 중...</div>
+  <div id="last-updated"></div>
   <div id="map"></div>
 </div>
 
@@ -563,6 +571,37 @@ document.querySelectorAll(".filter-chip").forEach((chip) => {
   });
 });
 
+const lastUpdatedEl = document.getElementById("last-updated");
+
+function formatKstTime(iso) {
+  if (!iso) return null;
+  return new Date(iso).toLocaleString("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderLastUpdated(meta) {
+  if (!meta) {
+    lastUpdatedEl.textContent = "";
+    return;
+  }
+  const parts = [];
+  const full = meta.lastFullUpdate;
+  const status = meta.lastStatusUpdate;
+  if (full) {
+    const skipped = full.status === "skipped_quota_exceeded" ? " (한도초과로 건너뜀)" : "";
+    parts.push(`지역갱신 ${formatKstTime(full.time)}${skipped}`);
+  }
+  if (status) {
+    const skipped = status.status === "skipped_quota_exceeded" ? " (한도초과로 건너뜀)" : "";
+    parts.push(`상태갱신 ${formatKstTime(status.time)}${skipped}`);
+  }
+  lastUpdatedEl.textContent = parts.join(" · ");
+}
+
 async function loadData() {
   statusBar.textContent = "불러오는 중...";
   try {
@@ -572,6 +611,7 @@ async function loadData() {
 
     allFeatures = geojson.features;
     dataLoaded = true;
+    renderLastUpdated(geojson.meta);
 
     requestLocation();
   } catch (err) {

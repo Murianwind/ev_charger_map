@@ -10,8 +10,9 @@ GitHub Pages 지도(`docs/index.html`)에 표시합니다.
 
 ```
 scripts/
-├── http_client.py      # 범용 HTTP 계층: curl 호출, 재시도, 한도초과 감지, 시크릿 마스킹
-├── gov_charger_api.py   # 환경공단 API 전용: 페이지네이션, 필터, 지역(zcode) 요일별 그룹
+├── kst_time.py          # 공통 유틸: 한국 표준시(KST) 계산
+├── http_client.py       # 범용 HTTP 계층: curl 호출, 재시도, 한도초과 감지, 시크릿 마스킹
+├── gov_charger_api.py   # 환경공단 API 전용: 페이지네이션, 필터, 지역(zcode) 요일별 그룹, 한도초과 쿨다운
 ├── tesla_source.py      # supercharge.info 전용: 테슬라 슈퍼차저 조회
 ├── geojson_store.py     # chargers.geojson 읽기/쓰기, 지역별 부분 교체 병합
 ├── fetch_chargers.py    # 일일 진입점 — 오늘 담당 지역 + 테슬라 갱신
@@ -78,15 +79,44 @@ data.go.kr 개발계정은 **하루 1,000건** 호출 제한이 있습니다. �
 두 스케줄이 실제로 도는 곳은 **오드로이드(홈서버)의 Docker 컨테이너**입니다
 (`combined-stack/`). data.go.kr API가 해외/클라우드 IP를 차단하는 것으로
 확인돼서, GitHub Actions의 클라우드 러너 대신 집 IP에서 도는 self-hosted
-러너를 씁니다. 컨테이너 하나가 두 역할을 겸합니다.
+러너를 씁니다.
 
-- **GitHub Actions self-hosted 러너**: GitHub에서 "Run workflow"로 수동 실행하면
-  이 컨테이너가 받아서 처리 (`myoung34/github-runner` 이미지 기반)
-- **리눅스 cron**: 매시간 상태 갱신, 매일 04:00 KST 지역 로테이션 갱신을
-  GitHub Actions 없이 컨테이너가 직접 `git pull → 스크립트 실행 → git commit → git push`
+컨테이너 하나가 두 역할을 겸하는데, **실제 작업(스크립트 실행, git
+커밋/푸시)은 이 컨테이너가 직접 하지 않습니다.** 대신:
+
+1. 컨테이너 안의 **리눅스 cron**이 정해진 시각에 GitHub API로
+   `workflow_dispatch` 이벤트만 쏩니다 (`trigger_workflow.sh`).
+2. 같은 컨테이너에 등록돼 있는 **GitHub Actions self-hosted 러너**가 그
+   요청을 받아서 실제 작업(파이썬 스크립트 실행 + git commit/push)을
+   수행합니다.
+
+이렇게 하면 cron이 트리거한 실행이든, GitHub 웹에서 "Run workflow"로 수동
+실행한 것이든 **전부 GitHub Actions 탭에 동일하게 실행 기록(로그, 성공/실패,
+소요시간)이 남습니다.** 컨테이너 자체는 git을 몰라도 되고, 잠금(`flock`) 같은
+것도 필요 없습니다 — 러너 하나가 잡을 순서대로 처리해주기 때문입니다.
 
 설정 방법은 `combined-stack/` 안의 파일들과 Portainer "Repository" 스택 배포
 방식을 참고하세요 (Dockerfile이 저장소에 같이 있어야 GUI만으로 빌드 가능).
+
+## 실행 상태 확인
+
+- **GitHub Actions 탭**: 모든 실행(cron/수동 불문)이 여기 남습니다.
+- **지도 페이지 헤더**: "지역갱신 MM/DD HH:MM · 상태갱신 MM/DD HH:MM"으로
+  마지막 갱신 시각이 표시됩니다. 한도초과로 건너뛴 경우 "(한도초과로 건너뜀)"이
+  같이 표시됩니다.
+- **API 일일 한도 초과 시**: 자동으로 다음날 자정(KST)까지 재시도를 쉬고,
+  그동안 들어오는 실행 요청은 API를 아예 호출하지 않고 즉시 건너뜁니다
+  (`gov_charger_api`의 쿨다운 로직).
+
+## API 호출 주기에 대한 참고
+
+`getChargerStatus`의 `period` 파라미터는 **문서 기준 1~10분까지만
+유효**합니다(기본값 5). 그래서 상태 갱신은 반드시 10분 이내 주기로 돌아야
+하고, 이 델타 엔드포인트는 지역별로 나눠서 뜸하게 도는 방식이 안 맞습니다
+(한 지역을 10분보다 뜸하게 보면 그 사이 변경분을 놓치게 됩니다). 지역
+로테이션(7일 분산)은 `getChargerInfo`(위치/이용조건 등 정적 정보) 쪽에만
+적용되고, 상태 델타는 전체를 자주(10분 이내) 보는 지금 방식이 이 API 제약
+안에서는 최선입니다.
 
 ## 지도 동작
 

@@ -4,15 +4,45 @@
 - 필터 조건 (완속/NACS 타입, 이용제한, 학교/아파트 제외 등)
 - 시도(zcode) 요일별 그룹 — 하루에 전국을 다 스캔하는 대신 7일에 나눠 담당
 - 원본 item -> station dict 변환 (GeoJSON 변환은 geojson_store의 책임)
+- 일일 호출 한도 초과 시 다음날 자정(KST)까지 자동으로 재시도를 쉬는 쿨다운
 """
+import os
 import time
 import urllib.parse
 from collections import OrderedDict
+from datetime import datetime, timedelta
 
-from http_client import fetch_json
+from http_client import QuotaExceededError, fetch_json
+from kst_time import now_kst
 
 API_BASE = "https://apis.data.go.kr/B552584/EvCharger"
 QUOTA_MARKER = "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR"
+
+# 한도초과가 감지되면, 자정(KST)까지 재시도를 쉬겠다는 표시를 여기 남긴다.
+# self-hosted 러너 컨테이너는 잡 사이에도 계속 떠있는 하나의 컨테이너라
+# /tmp가 실행 간에 유지된다(GitHub 호스팅 러너처럼 매번 새 VM이 아님).
+QUOTA_COOLDOWN_FILE = "/tmp/.ev_quota_cooldown"
+
+
+def _in_quota_cooldown():
+    if not os.path.exists(QUOTA_COOLDOWN_FILE):
+        return False
+    try:
+        with open(QUOTA_COOLDOWN_FILE) as f:
+            until = datetime.fromisoformat(f.read().strip())
+    except (OSError, ValueError):
+        return False
+    return now_kst() < until
+
+
+def _start_quota_cooldown():
+    """다음날 자정(KST)까지 쿨다운을 건다."""
+    tomorrow_midnight = (now_kst() + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    with open(QUOTA_COOLDOWN_FILE, "w") as f:
+        f.write(tomorrow_midnight.isoformat())
+    return tomorrow_midnight
 
 ALLOWED_CHGER_TYPES = {"02", "09", "10"}  # AC완속 / NACS / DC콤보+NACS
 
@@ -209,13 +239,40 @@ def build_stations(items):
 
 
 def fetch_region(service_key, zcodes):
-    """주어진 zcode들의 전체 정보를 받아 필터링된 station dict 리스트로 반환한다."""
-    all_items = []
-    for zcode in zcodes:
-        all_items.extend(_fetch_all_pages("getChargerInfo", service_key, {"zcode": zcode}))
-    return build_stations(all_items)
+    """주어진 zcode들의 전체 정보를 받아 필터링된 station dict 리스트로 반환한다.
+
+    한도초과 쿨다운 중이거나, 이번 호출에서 한도초과가 감지되면 None을
+    반환한다 (호출부가 "이번엔 건너뜀"으로 처리하도록).
+    """
+    if _in_quota_cooldown():
+        print("[gov_charger_api] 오늘 API 한도 초과로 쿨다운 중 — 지역 갱신 건너뜀")
+        return None
+    try:
+        all_items = []
+        for zcode in zcodes:
+            all_items.extend(_fetch_all_pages("getChargerInfo", service_key, {"zcode": zcode}))
+        return build_stations(all_items)
+    except QuotaExceededError:
+        until = _start_quota_cooldown()
+        print(f"[gov_charger_api] API 한도 초과 감지 — {until.isoformat()}까지 쿨다운 시작")
+        return None
 
 
 def fetch_status_delta(service_key, period_min):
-    """getChargerStatus 델타 피드를 가공 없이 그대로 반환한다."""
-    return _fetch_all_pages("getChargerStatus", service_key, {"period": period_min})
+    """getChargerStatus 델타 피드를 가공 없이 그대로 반환한다.
+
+    period_min은 API 문서 기준 1~10만 유효하다(기본값 5). 이보다 크게 주면
+    그 사이 변경분을 놓칠 수 있어(문서에 명시된 범위를 벗어남), 호출 주기와
+    period를 항상 10분/10 이하로 맞춰야 한다.
+
+    한도초과 쿨다운 중이거나, 이번 호출에서 한도초과가 감지되면 None을 반환한다.
+    """
+    if _in_quota_cooldown():
+        print("[gov_charger_api] 오늘 API 한도 초과로 쿨다운 중 — 상태 갱신 건너뜀")
+        return None
+    try:
+        return _fetch_all_pages("getChargerStatus", service_key, {"period": period_min})
+    except QuotaExceededError:
+        until = _start_quota_cooldown()
+        print(f"[gov_charger_api] API 한도 초과 감지 — {until.isoformat()}까지 쿨다운 시작")
+        return None
