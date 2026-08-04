@@ -53,7 +53,24 @@ def main():
     stations = fetch_region(service_key, zcodes)
     geojson = load_geojson()
 
-    if stations is not None:
+    zcode_set = set(zcodes)
+    existing_count = sum(1 for f in geojson["features"] if f["properties"].get("zcode") in zcode_set)
+
+    if stations is not None and len(stations) == 0 and existing_count > 0:
+        # 원래 데이터가 있던 지역인데 이번엔 0건으로 왔다 — 정상적인 결과라기엔
+        # 의심스러워서(감지 못한 한도초과/일시적 API 이상 등) 교체하지 않고
+        # 기존 데이터를 그대로 지킨다.
+        print(
+            f"경고: 지역 {zcodes} 조회 결과가 0건인데 기존에 {existing_count}개소가 있었습니다. "
+            "의심스러운 결과로 판단해 이번 교체를 건너뜁니다."
+        )
+        geojson.setdefault("meta", {})["lastFullUpdate"] = {
+            "time": now_kst_iso(),
+            "zcodes": zcodes,
+            "status": "skipped_suspicious_empty_result",
+        }
+        region_count = 0
+    elif stations is not None:
         geojson = replace_regions(geojson, zcodes, stations)
         geojson.setdefault("meta", {})["lastFullUpdate"] = {
             "time": now_kst_iso(),

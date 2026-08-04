@@ -13,7 +13,6 @@ COPY wrapper-entrypoint.sh /wrapper-entrypoint.sh
 
 RUN chmod +x /repo_scripts/trigger_workflow.sh /wrapper-entrypoint.sh \
     && chmod 0644 /etc/cron.d/ev-charger-cron \
-    && crontab /etc/cron.d/ev-charger-cron \
     && touch /var/log/cron.log
 
 ENTRYPOINT ["/wrapper-entrypoint.sh"]

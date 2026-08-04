@@ -588,16 +588,19 @@ function renderLastUpdated(meta) {
     lastUpdatedEl.textContent = "";
     return;
   }
+  const skipLabel = (status) => {
+    if (status === "skipped_quota_exceeded") return " (한도초과로 건너뜀)";
+    if (status === "skipped_suspicious_empty_result") return " (이상 응답으로 건너뜀)";
+    return "";
+  };
   const parts = [];
   const full = meta.lastFullUpdate;
   const status = meta.lastStatusUpdate;
   if (full) {
-    const skipped = full.status === "skipped_quota_exceeded" ? " (한도초과로 건너뜀)" : "";
-    parts.push(`지역갱신 ${formatKstTime(full.time)}${skipped}`);
+    parts.push(`지역갱신 ${formatKstTime(full.time)}${skipLabel(full.status)}`);
   }
   if (status) {
-    const skipped = status.status === "skipped_quota_exceeded" ? " (한도초과로 건너뜀)" : "";
-    parts.push(`상태갱신 ${formatKstTime(status.time)}${skipped}`);
+    parts.push(`상태갱신 ${formatKstTime(status.time)}${skipLabel(status.status)}`);
   }
   lastUpdatedEl.textContent = parts.join(" · ");
 }
