@@ -31,7 +31,7 @@ git remote set-url origin "$GIT_REMOTE"
   echo "EV_STATUS_PERIOD_MIN=60"
 } > /etc/environment
 
-echo "[scheduler] cron 시작 (매시간 상태 갱신, 매일 04:00 KST 전체 갱신)"
+echo "[scheduler] cron 시작 (매시간 상태 갱신, 매일 04:00 KST 지역 로테이션 갱신)"
 cron
 
 echo "[runner] GitHub Actions 러너 시작"
