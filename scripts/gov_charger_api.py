@@ -192,8 +192,10 @@ def to_float(value):
 # 원본 addr에 "주소+시설명"이 붙어서 오는 경우가 있다
 # (예: "대전광역시 유성구 전민동 346-3전민동 제2공영주차장 -",
 #      "대전광역시 유성구 북유성대로 172죽동 공영주차장 2~3층",
-#      "대전광역시 유성구 덕명동 595학하지구 제5공영주차장").
-# 주소가 끝나는 지점을 우선순위대로 찾는다:
+#      "대전광역시 유성구 덕명동 595학하지구 제5공영주차장",
+#      "대전광역시 유성구 엑스포로 55 (도룡동, 기초과학연구원 본원)").
+# 먼저 끝에 괄호로 묶인 부가설명이 있으면 떼어내 시설명 후보로 챙겨두고,
+# 남은 주소에서 주소가 끝나는 지점을 우선순위대로 찾는다:
 #   1. 지번(숫자-숫자, 예: 346-3) — 하이픈이 있어서 "제2공영주차장" 같은
 #      시설명 속 숫자와 헷갈리지 않는다.
 #   2. 도로명(로/길 + 숫자, 예: "북유성대로 172") — 도로명주소는 하이픈이
@@ -207,24 +209,32 @@ def to_float(value):
 _LOT_NUMBER_PATTERN = re.compile(r"\d+-\d+")
 _ROAD_NUMBER_PATTERN = re.compile(r"(?:로|길)\s*\d+(?:-\d+)?")
 _BARE_NUMBER_GLUED_PATTERN = re.compile(r"(?<!제)\d+(?=\s*[가-힣])")
+_TRAILING_PAREN_PATTERN = re.compile(r"\s*\(([^()]*)\)\s*$")
 
 
 def split_addr_and_location(addr):
     """(정리된 주소, 뒤에 붙어있던 시설명) 튜플을 반환한다.
     분리할 게 없으면 시설명은 빈 문자열이다.
     """
+    paren_text = ""
+    paren_match = _TRAILING_PAREN_PATTERN.search(addr)
+    if paren_match:
+        paren_text = paren_match.group(1).strip()
+        addr = addr[: paren_match.start()].strip()
+
     strong_matches = list(_LOT_NUMBER_PATTERN.finditer(addr)) + list(_ROAD_NUMBER_PATTERN.finditer(addr))
     if strong_matches:
         split_at = max(m.end() for m in strong_matches)
     else:
         weak_matches = list(_BARE_NUMBER_GLUED_PATTERN.finditer(addr))
         if not weak_matches:
-            return addr.strip(" -"), ""
+            return addr.strip(" -"), paren_text
         split_at = weak_matches[0].end()
 
     address_part = addr[:split_at].strip()
     rest = addr[split_at:].strip(" -").strip()
-    return address_part, rest
+    combined_rest = " ".join(p for p in (rest, paren_text) if p)
+    return address_part, combined_rest
 
 
 # addr 텍스트에 이 지역명이 있으면, 좌표가 대략 이 사각 범위(lat_min, lat_max,
@@ -317,9 +327,12 @@ def build_stations(items):
                 skipped_stat_ids.add(stat_id)
                 continue
 
-            # location은 API 자체가 준 값을 우선하고, 없으면 addr에서 분리해낸
-            # 시설명을 대신 쓴다 (예: "전민동 제2공영주차장").
-            location = item.get("location", "").strip() or extracted_location
+            # addr에서 분리해낸 시설명(있으면 먼저)과 API 자체 location 값을
+            # 둘 다 있으면 이어붙인다 (예: 괄호 부가설명 "기초과학연구원 본원"
+            # + API가 준 "지상1층 주차장" -> "기초과학연구원 본원 지상1층 주차장").
+            location = " ".join(
+                p for p in (extracted_location, item.get("location", "").strip()) if p
+            )
 
             stations[stat_id] = {
                 "statId": stat_id,
