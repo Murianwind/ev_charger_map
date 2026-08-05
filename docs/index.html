@@ -365,13 +365,16 @@ function floorLabel(props) {
 }
 
 function buildPopup(props) {
-  // addr/addrDetail을 합칠 때, escapeHtml()의 "빈 값이면 -로 표시" 규칙을
-  // 그대로 쓰면 addrDetail이 빈 문자열일 때 주소 뒤에 의미 없는 "-"가
-  // 붙는다. 여기선 있는 것만 이어붙인다.
-  const addrLine = [props.addr, props.addrDetail]
+  // addr는 저희가 정리한 깨끗한 주소만 담고 있지만, addrDetail은 API 원본
+  // 그대로라 "지하1층" 같은 짧은 정보뿐 아니라 "청주시 평생학습관"처럼
+  // 시설명 전체가 들어있는 경우도 많다. 그래서 addrDetail을 주소 줄에
+  // 붙이지 않고, location(우리가 추출한 시설명)과 같은 줄로 보낸다.
+  const addrLine = escapeHtml(props.addr);
+
+  const locationText = [props.addrDetail, props.location]
     .filter((part) => part && part.trim())
-    .map(escapeHtml)
     .join(" ");
+  const locationLine = locationText ? `<div class="location">${escapeHtml(locationText)}</div>` : "";
 
   const teslaBadge = props.isTesla
     ? `<div class="tesla-badge">⚡ 테슬라 슈퍼차저</div>`
@@ -385,6 +388,7 @@ function buildPopup(props) {
         ${teslaBadge}
         <h3>${escapeHtml(props.statNm)}</h3>
         <div class="addr">${addrLine}</div>
+        ${locationLine}
         <div class="field"><span class="k">이용시간</span><span class="v">${escapeHtml(props.useTime)}</span></div>
         <div class="note">충전기 상태 정보 미제공</div>
         <div class="field"><span class="k">${escapeHtml(props.teslaSummary)}</span></div>
@@ -412,12 +416,6 @@ function buildPopup(props) {
     props.limitYn === "N" ? "없음" : props.limitYn === "Y" ? "있음" : "확인 필요";
   const parkingLabel =
     props.parkingFree === "Y" ? "무료" : props.parkingFree === "N" ? "유료" : "확인 필요";
-
-  // location은 addr에서 분리해낸 시설명(또는 API 자체 값)이라, 주소와
-  // 별도 줄로 보여준다 (예: "전민동 제2공영주차장").
-  const locationLine = props.location
-    ? `<div class="location">${escapeHtml(props.location)}</div>`
-    : "";
 
   return `
     <div class="popup">
