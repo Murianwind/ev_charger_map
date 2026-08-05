@@ -371,9 +371,14 @@ function buildPopup(props) {
   // 붙이지 않고, location(우리가 추출한 시설명)과 같은 줄로 보낸다.
   const addrLine = escapeHtml(props.addr);
 
-  const locationText = [props.addrDetail, props.location]
-    .filter((part) => part && part.trim())
-    .join(" ");
+  // addrDetail과 location이 API 원본 그대로 완전히 같은 문자열인 경우가
+  // 많다(둘 다 그냥 "주차장"인 식). 그대로 이어붙이면 "주차장 주차장"처럼
+  // 중복되니, 정확히 같은 문자열이면 한 번만 남긴다.
+  const locationParts = [props.addrDetail, props.location]
+    .map((part) => (part || "").trim())
+    .filter(Boolean);
+  const uniqueLocationParts = [...new Set(locationParts)];
+  const locationText = uniqueLocationParts.join(" ");
   const locationLine = locationText ? `<div class="location">${escapeHtml(locationText)}</div>` : "";
 
   const teslaBadge = props.isTesla
