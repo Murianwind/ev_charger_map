@@ -31,6 +31,10 @@ jobs:
         run: python scripts/fetch_chargers.py
 
       - name: Commit updated data
+        env:
+          EV_SERVICE_KEY: ${{ secrets.EV_SERVICE_KEY }}
+          KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
+          FULL_SEED: ${{ inputs.full_seed && '1' || '' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -38,18 +42,16 @@ jobs:
           git diff --cached --quiet && { echo "변경 없음, 커밋 생략"; exit 0; }
           git commit -m "chore: charger data refresh (manual)"
 
-          # 보통은 바로 push되지만, 그 사이 다른 실행(예: 상태 델타)이 먼저
-          # push했으면 거부(reject)당할 수 있다. 이 파일은 매번 스크립트가
-          # 통째로 새로 만드는 데이터라 사람이 편집할 일이 없으므로, 거부되면
-          # 방금 만든 우리 커밋 내용(파일)을 그대로 유지한 채 origin의 최신
-          # 커밋 위로 올려서 다시 push한다 — rebase의 애매한 자동병합에
-          # 기대지 않고, "우리가 방금 만든 파일 내용"을 명시적으로 다시
-          # 커밋하므로 데이터가 조용히 유실될 걱정이 없다.
           if ! git push origin HEAD:main; then
-            echo "push 거부됨 — 최신 상태 위로 다시 올려서 재시도"
+            echo "push 거부됨 — 우리 파일을 그대로 다시 밀어넣으면 그 사이 다른"
+            echo "실행(예: 상태 델타)이 반영한 내용을 덮어써버릴 수 있다."
+            echo "그래서 최신 상태를 새로 받아와 스크립트를 처음부터 다시 돌린다"
+            echo "(API를 한 번 더 호출하게 되지만, 데이터 유실보다는 낫다)."
             git fetch origin main
-            git reset --soft origin/main
+            git reset --hard origin/main
+            python scripts/fetch_chargers.py
             git add docs/data/chargers.geojson
+            git diff --cached --quiet && { echo "변경 없음, 커밋 생략"; exit 0; }
             git commit -m "chore: charger data refresh (manual)"
             git push origin HEAD:main
           fi
