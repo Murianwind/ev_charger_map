@@ -29,7 +29,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/data/chargers.geojson
-          git diff --cached --quiet || git commit -m "chore: charger status delta update"
-          git fetch origin main
-          git rebase origin/main -X ours || git rebase --abort
-          git push
+          git diff --cached --quiet && { echo "변경 없음, 커밋 생략"; exit 0; }
+          git commit -m "chore: charger status delta update"
+
+          if ! git push origin HEAD:main; then
+            echo "push 거부됨 — 최신 상태 위로 다시 올려서 재시도"
+            git fetch origin main
+            git reset --soft origin/main
+            git add docs/data/chargers.geojson
+            git commit -m "chore: charger status delta update"
+            git push origin HEAD:main
+          fi
