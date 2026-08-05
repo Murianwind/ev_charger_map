@@ -1,6 +1,6 @@
 """supercharge.info(테슬라 슈퍼차저 커뮤니티 오픈 데이터베이스) 전용 로직."""
 from http_client import fetch_json
-from kakao_geocoder import reverse_geocode
+from kakao_geocoder import find_nearby_place_name, reverse_geocode
 
 SUPERCHARGE_INFO_URL = "https://supercharge.info/service/supercharge/allSites"
 
@@ -12,6 +12,20 @@ STALL_VERSION_LABELS = {
     "urban": "Urban",
     "other": "기타",
 }
+
+# 카카오맵에 등록된 실제 장소명은 "OO 수퍼차저(DC콤보) 전기차충전소 (테슬라전용)"처럼
+# "수퍼차저" 뒤에 커넥터 타입/카테고리 설명이 덧붙는 경우가 많다. 이 정보는
+# 팝업에 이미 배지/커넥터 목록으로 따로 나오니 중복이라, "수퍼차저"까지만
+# 남기고 뒤는 잘라낸다. 표기가 "슈퍼차저"인 경우도 대비해둔다.
+_SUPERCHARGER_KEYWORDS = ("수퍼차저", "슈퍼차저")
+
+
+def _truncate_after_supercharger(name):
+    for keyword in _SUPERCHARGER_KEYWORDS:
+        idx = name.find(keyword)
+        if idx != -1:
+            return name[: idx + len(keyword)]
+    return name
 
 
 def fetch_tesla_superchargers():
@@ -28,6 +42,11 @@ def fetch_tesla_superchargers():
     주소도 영문(state/city/street)만 제공돼서, KAKAO_REST_API_KEY가 설정돼
     있으면 좌표를 한글 주소로 변환(reverse geocoding)해 표시한다. 키가 없거나
     변환에 실패하면 기존 영문 state/city를 그대로 쓴다.
+
+    사이트 이름("Daejeon - DCC" 같은 영문 축약 이름)은 번역이 아니라, 카카오맵에
+    그 좌표 근처 "테슬라"로 등록된 장소가 있는지 검색해서 있으면 그 한글
+    이름으로 대체한다. 등록된 장소가 없으면(아직 카카오맵에 안 올라온 경우)
+    기존 영문 이름을 정리해서 그대로 쓴다.
     """
     try:
         sites = fetch_json(SUPERCHARGE_INFO_URL)
@@ -67,7 +86,9 @@ def fetch_tesla_superchargers():
             summary += f" 최대 {power_kw}kW"
 
         raw_name = site.get("name") or "테슬라 수퍼차저"
-        station_name = raw_name.replace(", South Korea", "").replace("South Korea - ", "")
+        cleaned_english_name = raw_name.replace(", South Korea", "").replace("South Korea - ", "")
+        korean_place_name = find_nearby_place_name(lat, lng, "테슬라")
+        station_name = _truncate_after_supercharger(korean_place_name) if korean_place_name else cleaned_english_name
 
         # supercharge.info의 주소는 영문(state/city/street)뿐이라, 이미 갖고
         # 있는 좌표로 카카오 좌표->한글주소 변환(reverse geocoding)을 해서
