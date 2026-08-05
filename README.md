@@ -12,8 +12,10 @@ GitHub Pages 지도(`docs/index.html`)에 표시합니다.
 scripts/
 ├── kst_time.py          # 공통 유틸: 한국 표준시(KST) 계산
 ├── http_client.py       # 범용 HTTP 계층: curl 호출, 재시도, 한도초과 감지, 시크릿 마스킹
-├── gov_charger_api.py   # 환경공단 API 전용: 페이지네이션, 필터, 지역(zcode) 요일별 그룹, 한도초과 쿨다운
-├── kakao_geocoder.py    # 카카오 로컬 API로 좌표 검증/보정 (선택 사항)
+├── quota_cooldown.py    # 일일 호출 한도 초과 시 다음날까지 재시도를 쉬는 쿨다운 상태 관리
+├── address_parser.py    # 한글 주소 텍스트 파싱(주소+시설명 분리) 및 좌표 대략 검증
+├── kakao_geocoder.py    # 카카오 로컬 API로 좌표 검증/보정, 역지오코딩, 장소명 검색 (선택 사항)
+├── gov_charger_api.py   # 환경공단 API 전용: 페이지네이션, 필터, 지역(zcode) 요일별 그룹
 ├── tesla_source.py      # supercharge.info 전용: 테슬라 슈퍼차저 조회
 ├── geojson_store.py     # chargers.geojson 읽기/쓰기, 지역별 부분 교체 병합
 ├── fetch_chargers.py    # 일일 진입점 — 오늘 담당 지역 + 테슬라 갱신
