@@ -101,6 +101,11 @@ DAY_ZCODE_GROUPS = [
 # "이 zcode 중 어디에도 없으면 정상 데이터가 아니다"를 판단하는 데 쓴다).
 ALL_ZCODES = {z for group in DAY_ZCODE_GROUPS for z in group}
 
+# 가이드 문서 기준 numOfRows 최댓값(최소 10, 최대 9999). 한 페이지에 최대한
+# 많이 받아와야 pageNo 호출 횟수(=API 호출 횟수)가 줄어든다. 예전엔 1000을
+# 썼는데, 부산(3만여 건) 기준 33페이지 -> 4페이지로 거의 8배 줄었다.
+MAX_NUM_OF_ROWS = 9999
+
 
 def _build_url(operation, service_key, page_no, num_of_rows, extra_params):
     params = {
@@ -118,7 +123,7 @@ def _build_url(operation, service_key, page_no, num_of_rows, extra_params):
     return f"{API_BASE}/{operation}?{urllib.parse.urlencode(params)}"
 
 
-def _fetch_all_pages(operation, service_key, extra_params=None, num_of_rows=1000):
+def _fetch_all_pages(operation, service_key, extra_params=None, num_of_rows=MAX_NUM_OF_ROWS):
     """totalCount에 도달할 때까지 pageNo를 늘려가며 전체 item을 모아 반환한다."""
     items = []
     page_no = 1
