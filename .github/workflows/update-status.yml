@@ -25,6 +25,9 @@ jobs:
         run: python scripts/fetch_status.py
 
       - name: Commit status changes
+        env:
+          EV_SERVICE_KEY: ${{ secrets.EV_SERVICE_KEY }}
+          EV_STATUS_PERIOD_MIN: "10"
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -33,10 +36,14 @@ jobs:
           git commit -m "chore: charger status delta update"
 
           if ! git push origin HEAD:main; then
-            echo "push 거부됨 — 최신 상태 위로 다시 올려서 재시도"
+            echo "push 거부됨 — 우리 파일을 그대로 다시 밀어넣으면 그 사이 다른"
+            echo "실행(예: 전체 지역 갱신)이 반영한 내용을 덮어써버릴 수 있다."
+            echo "그래서 최신 상태를 새로 받아와 스크립트를 처음부터 다시 돌린다."
             git fetch origin main
-            git reset --soft origin/main
+            git reset --hard origin/main
+            python scripts/fetch_status.py
             git add docs/data/chargers.geojson
+            git diff --cached --quiet && { echo "변경 없음, 커밋 생략"; exit 0; }
             git commit -m "chore: charger status delta update"
             git push origin HEAD:main
           fi
