@@ -10,6 +10,9 @@ services:
       ACCESS_TOKEN: "${ACCESS_TOKEN}"
       LABELS: self-hosted,home-pc
       RUNNER_WORKDIR: /tmp/runner/work
+      # 선택 사항: 러너가 오프라인으로 감지되면 여기로 알림을 보낸다.
+      # 안 쓰려면 빈 문자열로 두면 된다(알림만 생략, 자동 재시작은 그대로 동작).
+      DISCORD_WEBHOOK_URL: "${DISCORD_WEBHOOK_URL:-}"
     volumes:
       - runner-work:/tmp/runner/work
 

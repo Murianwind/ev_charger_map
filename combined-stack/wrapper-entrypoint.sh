@@ -8,18 +8,19 @@ RUNNER_HOME="$(pwd)"
 
 : "${ACCESS_TOKEN:?ACCESS_TOKEN 환경변수가 필요합니다 (러너 등록 + 워크플로 dispatch 겸용)}"
 : "${REPO_URL:?REPO_URL 환경변수가 필요합니다 (예: https://github.com/Murianwind/ev_charger_map)}"
+: "${RUNNER_NAME:?RUNNER_NAME 환경변수가 필요합니다 (헬스체크가 이 이름으로 러너 상태를 조회함)}"
 
-# cron은 로그인 셸이 아니라 환경변수를 못 물려받는다. trigger_workflow.sh가
-# GitHub API로 워크플로를 dispatch할 때 필요한 값들을 파일로 내보내둔다.
-# (실제 데이터 갱신은 이 컨테이너가 아니라, 이 컨테이너가 러너로 등록해둔
-# GitHub Actions 워크플로 쪽에서 실행된다 — EV_SERVICE_KEY도 거기서
-# GitHub Secrets로 넘어가지 여기선 필요 없다.)
+# cron은 로그인 셸이 아니라 환경변수를 못 물려받는다. trigger_workflow.sh와
+# check_runner_health.sh가 GitHub API를 호출할 때 필요한 값들을 파일로
+# 내보내둔다. DISCORD_WEBHOOK_URL은 선택 사항(비어있으면 알림 생략).
 {
   echo "ACCESS_TOKEN=${ACCESS_TOKEN}"
   echo "REPO_URL=${REPO_URL}"
+  echo "RUNNER_NAME=${RUNNER_NAME}"
+  echo "DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}"
 } > /etc/environment
 
-echo "[scheduler] cron 시작 (10분마다 상태 갱신 워크플로 dispatch, 매일 04:00 KST 지역 갱신 워크플로 dispatch)"
+echo "[scheduler] cron 시작 (10분마다 상태 갱신 워크플로 dispatch, 매일 04:00 KST 지역 갱신 워크플로 dispatch, 5분마다 러너 헬스체크)"
 cron
 
 echo "[runner] GitHub Actions 러너 시작"
