@@ -9,10 +9,6 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="완속충전기" />
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-
 <style>
   :root {
     --ink: #1c2320;
@@ -118,30 +114,7 @@
 
   #map {
     flex: 1;
-  }
-
-  .marker-dot {
-    border-radius: 50%;
-    box-shadow: 0 0 0 2px rgba(255,255,255,0.9), 0 1px 3px rgba(0,0,0,0.35);
-  }
-
-  .leaflet-popup-content-wrapper {
-    border-radius: 8px;
-  }
-
-  .leaflet-popup-content {
-    max-height: 55vh;
-    overflow-y: auto;
-    margin: 12px 16px;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-  }
-
-  .leaflet-popup-close-button {
-    font-size: 20px !important;
-    padding: 8px !important;
-    width: 30px !important;
-    height: 30px !important;
+    position: relative; /* locate-btn을 이 안에서 절대 위치로 띄우기 위함 */
   }
 
   .popup {
@@ -149,11 +122,33 @@
     line-height: 1.5;
     min-width: 240px;
     max-width: 300px;
+    max-height: 55vh;
+    overflow-y: auto;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    padding: 12px 16px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .popup .popup-close {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    border: none;
+    background: none;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    color: #888;
+    padding: 4px;
   }
 
   .popup h3 {
     margin: 0 0 4px;
     font-size: 14px;
+    padding-right: 20px;
   }
 
   .popup .addr {
@@ -226,6 +221,10 @@
   }
 
   .locate-btn {
+    position: absolute;
+    right: 12px;
+    bottom: 24px;
+    z-index: 10;
     width: 40px;
     height: 40px;
     background: #fff;
@@ -245,6 +244,10 @@
   .locate-btn:active { transform: translateY(1px); }
 
   .user-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #2563eb;
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.35), 0 0 0 1px #fff;
   }
 </style>
@@ -273,8 +276,15 @@
   <div id="map"></div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<!--
+  카카오맵 JS 키 설정 필요:
+  1. https://developers.kakao.com 에서 기존 앱 선택
+  2. 앱 설정 → 플랫폼 → Web 플랫폼 등록 → 사이트 도메인에 https://murianwind.github.io 추가
+  3. 제품 설정 → 지도(Maps) 활성화
+  4. 앱 설정 → 앱 키 → "JavaScript 키" 복사해서 아래 appkey= 뒤에 붙여넣기
+     (REST API 키랑 다른 키입니다 — 지오코딩용 키를 여기 쓰면 안 됩니다)
+-->
+<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=41a435402a9a232bd1d9804a4a795937&libraries=clusterer&autoload=false"></script>
 <script>
 const STATUS_COLOR = {
   "2": "#2f7d5a", // 충전가능
@@ -283,32 +293,26 @@ const STATUS_COLOR = {
 };
 
 const RADIUS_KM = 5;
-const MOVE_SETTLE_DELAY_MS = 1500; // 지도 이동이 끝난 뒤 이 시간만큼 더 기다렸다가 재표출
+const MOVE_SETTLE_DELAY_MS = 800; // 지도 이동이 끝난 뒤 이 시간만큼 더 기다렸다가 재표출
 const DEFAULT_CENTER = [36.4, 127.9];
-const DEFAULT_ZOOM = 7;
+// 카카오 지도는 레벨 숫자가 작을수록 확대(=Leaflet 줌과 반대 방향)이다.
+// 13 정도가 전국이 대략 다 보이는 수준.
+const DEFAULT_LEVEL = 13;
+// 이 레벨보다 축소된(숫자가 큰) 상태에서만 클러스터링한다 — 이 값보다
+// 확대하면(숫자가 작아지면) 클러스터링을 끄고 마커를 각자 그대로 찍는다.
+const CLUSTER_MIN_LEVEL = 6;
 
-const map = L.map("map", { zoomControl: true }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+const statusBar = document.getElementById("status-bar");
+const lastUpdatedEl = document.getElementById("last-updated");
 
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  attribution: '&copy; OpenStreetMap contributors',
-  maxZoom: 19,
-}).addTo(map);
-
-const clusterGroup = L.markerClusterGroup({
-  maxClusterRadius: 45,
-  spiderfyOnMaxZoom: true,
-  // 이 줌 이상(더 확대)에서는 클러스터링을 아예 끄고 마커를 있는 그대로
-  // 각자 찍는다 — 웬만큼 확대하면 실제 거리만큼 자연스럽게 떨어져 보여서
-  // 숫자 뭉치 없이도 읽기 편하다. 이보다 축소하면(서울처럼 밀집된 지역)
-  // 여전히 숫자로 묶어야 안 겹쳐 보인다.
-  disableClusteringAtZoom: 15,
-});
-map.addLayer(clusterGroup);
+let map;
+let clusterer;
+let infoWindow; // 팝업 하나를 계속 재사용한다(마커마다 새로 안 만듦)
+let popupOpen = false;
 
 let allFeatures = [];
 let dataLoaded = false;
 let moveEndTimer = null;
-let popupOpen = false;
 const MAX_MARKERS = 1500; // 한 번에 그리는 마커 최대 개수 (성능 보호용 캡)
 const POPUP_MAX_WIDTH = Math.max(220, Math.min(280, window.innerWidth - 40));
 
@@ -322,29 +326,6 @@ function stationMatchesTypeFilter(feature) {
   const props = feature.properties;
   if (activeTypeFilters.has("TESLA") && props.isTesla) return true;
   return (props.chargers || []).some((c) => activeTypeFilters.has(c.chgerType));
-}
-
-// center를 기준으로, 화면의 짧은 변에 반경 원이 어느 정도 차도록 줌 레벨을 계산한다.
-// map.getSize()는 레이아웃이 아직 안정되기 전에 부르면 엉뚱한(때로는 0에 가까운)
-// 값을 반환할 수 있어, 먼저 invalidateSize()로 강제로 다시 계산시킨다.
-// 가로/세로 중 "짧은 변" 기준으로 계산해야 가로로 넓은 데스크톱과 세로로 긴
-// 모바일 양쪽 다 반경 원이 화면 밖으로 넘치지 않는다.
-function zoomForRadius(center, radiusKm) {
-  map.invalidateSize();
-  const size = map.getSize(); // {x: 너비, y: 높이} px
-  const shortSidePx = Math.min(size.x, size.y);
-
-  if (!shortSidePx || shortSidePx < 50) {
-    // 아직 레이아웃이 안 잡혀 크기를 못 믿을 상황: 무리하게 확대/축소하지 말고
-    // 도시 단위로 보이는 무난한 기본 줌으로 대체한다.
-    return 10;
-  }
-
-  const desiredPixelRadius = shortSidePx * 0.5; // 반경 원이 화면 짧은 변의 ~84%를 채우도록
-  const metersPerPixel = (radiusKm * 1000) / desiredPixelRadius;
-  const zoom =
-    Math.log2((156543.03392 * Math.cos((center.lat * Math.PI) / 180)) / metersPerPixel);
-  return Math.max(5, Math.min(16, zoom));
 }
 
 function stationColor(chargers) {
@@ -390,11 +371,14 @@ function buildPopup(props) {
     ? `<div class="tesla-badge">⚡ 테슬라 슈퍼차저</div>`
     : "";
 
+  const closeBtn = `<button type="button" class="popup-close" onclick="closePopup()">✕</button>`;
+
   if (props.isTesla) {
     // supercharge.info는 실시간 사용 가능 여부를 제공하지 않아서,
     // 개별 커넥터 상태를 지어내지 않고 요약 정보만 보여준다.
     return `
-      <div class="popup">
+      <div class="popup" style="position:relative;">
+        ${closeBtn}
         ${teslaBadge}
         <h3>${escapeHtml(props.statNm)}</h3>
         <div class="addr">${addrLine}</div>
@@ -428,7 +412,8 @@ function buildPopup(props) {
     props.parkingFree === "Y" ? "무료" : props.parkingFree === "N" ? "유료" : "확인 필요";
 
   return `
-    <div class="popup">
+    <div class="popup" style="position:relative;">
+      ${closeBtn}
       <h3>${escapeHtml(props.statNm)}</h3>
       <div class="addr">${addrLine}</div>
       ${locationLine}
@@ -442,27 +427,54 @@ function buildPopup(props) {
     </div>`;
 }
 
-const statusBar = document.getElementById("status-bar");
+// 색깔 원 마커 이미지를 SVG로 만든다. 실제로 쓰이는 조합이 몇 개 안 되니
+// (초록/주황/회색 × 흰테두리, 회색×빨간테두리(테슬라)) 캐시해서 재사용한다.
+const markerImageCache = new Map();
+
+function getMarkerImage(fillColor, isTesla) {
+  const borderColor = isTesla ? "#cc0000" : "#ffffff";
+  const borderWidth = isTesla ? 3 : 2;
+  const size = 18;
+  const key = `${fillColor}|${borderColor}|${borderWidth}`;
+  if (markerImageCache.has(key)) return markerImageCache.get(key);
+
+  const r = size / 2 - borderWidth / 2;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
+    `<circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="${fillColor}" ` +
+    `stroke="${borderColor}" stroke-width="${borderWidth}" ` +
+    `style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));" /></svg>`;
+  const dataUri = "data:image/svg+xml;base64," + btoa(svg);
+  const image = new kakao.maps.MarkerImage(
+    dataUri,
+    new kakao.maps.Size(size, size),
+    { offset: new kakao.maps.Point(size / 2, size / 2) }
+  );
+  markerImageCache.set(key, image);
+  return image;
+}
+
+function openPopupFor(marker, props) {
+  infoWindow.setContent(buildPopup(props));
+  infoWindow.open(map, marker);
+  popupOpen = true;
+}
+
+function closePopup() {
+  infoWindow.close();
+  popupOpen = false;
+  renderVisible(); // 팝업 여는 동안 놓친 화면 변화가 있으면 이제 반영
+}
 
 function makeMarker(feature) {
   const [lng, lat] = feature.geometry.coordinates;
   const props = feature.properties;
   const color = stationColor(props.chargers);
-  const marker = L.circleMarker([lat, lng], {
-    radius: 7,
-    fillColor: color,
-    color: props.isTesla ? "#cc0000" : "#fff",
-    weight: props.isTesla ? 2.5 : 1.5,
-    fillOpacity: 0.95,
-    className: "marker-dot",
+  const marker = new kakao.maps.Marker({
+    position: new kakao.maps.LatLng(lat, lng),
+    image: getMarkerImage(color, !!props.isTesla),
   });
-  marker.bindPopup(buildPopup(props), {
-    maxWidth: POPUP_MAX_WIDTH,
-    maxHeight: Math.round(window.innerHeight * 0.55),
-    autoPan: true,
-    autoPanPadding: [16, 16],
-    closeButton: true,
-  });
+  kakao.maps.event.addListener(marker, "click", () => openPopupFor(marker, props));
   return marker;
 }
 
@@ -472,72 +484,69 @@ function renderVisible() {
   const bounds = map.getBounds();
   const withinBounds = allFeatures.filter((f) => {
     const [lng, lat] = f.geometry.coordinates;
-    return bounds.contains([lat, lng]) && stationMatchesTypeFilter(f);
+    return bounds.contain(new kakao.maps.LatLng(lat, lng)) && stationMatchesTypeFilter(f);
   });
 
   const capped = withinBounds.length > MAX_MARKERS;
   const toRender = capped ? withinBounds.slice(0, MAX_MARKERS) : withinBounds;
 
-  clusterGroup.clearLayers();
-  clusterGroup.addLayers(toRender.map(makeMarker));
+  clusterer.clear();
+  clusterer.addMarkers(toRender.map(makeMarker));
 
   statusBar.textContent = capped
     ? `현재 화면에 ${withinBounds.length.toLocaleString()}개소 중 ${MAX_MARKERS.toLocaleString()}개만 표시 중 — 더 확대해 보세요`
     : `현재 화면 내 충전소 ${withinBounds.length.toLocaleString()}개소 표시 중`;
 }
 
-// 팝업이 열려있는 동안은 재렌더링(=마커 전체 재생성)을 하지 않는다.
-// 안 그러면 팝업을 열 때 발생하는 autoPan → moveend 때문에, 보고 있던
-// 팝업의 마커가 통째로 새로 만들어지면서 팝업이 저절로 닫혀버린다.
-map.on("popupopen", () => {
-  popupOpen = true;
-  if (moveEndTimer) clearTimeout(moveEndTimer);
-});
-map.on("popupclose", () => {
-  popupOpen = false;
-  renderVisible(); // 팝업 여는 동안 놓친 화면 변화가 있으면 이제 반영
-});
-
-// 사용자가 지도를 이동/확대·축소한 뒤, 동작이 완전히 끝나고 나서
-// MOVE_SETTLE_DELAY_MS만큼 더 기다렸다가 현재 화면 기준으로 다시 표출한다.
-map.on("moveend", () => {
-  if (!dataLoaded || popupOpen) return;
-  if (moveEndTimer) clearTimeout(moveEndTimer);
-  moveEndTimer = setTimeout(renderVisible, MOVE_SETTLE_DELAY_MS);
-});
-
 let userLatLng = null;
-let userMarker = null;
+let userOverlay = null;
 let radiusCircle = null;
+
+// center(반경 km)가 화면에 다 들어오도록 하는 LatLngBounds를 만든다.
+// Leaflet 때처럼 줌 레벨을 수동 계산하는 대신, 카카오의 setBounds에
+// 맞춰 넣을 사각 범위만 계산해서 넘기면 카카오가 알아서 적절한 레벨을 고른다.
+function boundsForRadius(center, radiusKm) {
+  const latDelta = radiusKm / 111; // 위도 1도 ≈ 111km
+  const lngDelta = radiusKm / (111 * Math.cos((center.getLat() * Math.PI) / 180));
+  const sw = new kakao.maps.LatLng(center.getLat() - latDelta, center.getLng() - lngDelta);
+  const ne = new kakao.maps.LatLng(center.getLat() + latDelta, center.getLng() + lngDelta);
+  return new kakao.maps.LatLngBounds(sw, ne);
+}
 
 // 현재 위치 마커 + 반경 안내 원을 표시(있으면 위치만 갱신)
 function showUserLocation(center) {
   userLatLng = center;
 
-  if (userMarker) {
-    userMarker.setLatLng(center);
+  if (userOverlay) {
+    userOverlay.setPosition(center);
   } else {
-    userMarker = L.circleMarker(center, {
-      radius: 8,
-      fillColor: "#2563eb",
-      color: "#fff",
-      weight: 2,
-      fillOpacity: 1,
-      className: "user-dot",
-    }).addTo(map);
-    userMarker.bindTooltip("현재 위치", { direction: "top", offset: [0, -8] });
+    const el = document.createElement("div");
+    el.className = "user-dot";
+    el.title = "현재 위치";
+    userOverlay = new kakao.maps.CustomOverlay({
+      position: center,
+      content: el,
+      yAnchor: 0.5,
+      xAnchor: 0.5,
+      zIndex: 5,
+    });
+    userOverlay.setMap(map);
   }
 
   if (radiusCircle) {
-    radiusCircle.setLatLng(center);
+    radiusCircle.setPosition(center);
   } else {
-    radiusCircle = L.circle(center, {
+    radiusCircle = new kakao.maps.Circle({
+      center,
       radius: RADIUS_KM * 1000,
-      color: "#2563eb",
-      weight: 1,
+      strokeWeight: 1,
+      strokeColor: "#2563eb",
+      strokeOpacity: 0.6,
+      strokeStyle: "shortdash",
+      fillColor: "#2563eb",
       fillOpacity: 0.04,
-      dashArray: "4 6",
-    }).addTo(map);
+    });
+    radiusCircle.setMap(map);
   }
 }
 
@@ -545,7 +554,7 @@ function showUserLocation(center) {
 // 모르면(아직 못 받았거나 최초 거부 후 다시 시도) 새로 요청한다.
 function goToUserLocation() {
   if (userLatLng) {
-    map.setView(userLatLng, zoomForRadius(userLatLng, RADIUS_KM));
+    map.setBounds(boundsForRadius(userLatLng, RADIUS_KM));
     renderVisible();
   } else {
     requestLocation();
@@ -560,9 +569,9 @@ function requestLocation() {
   }
   navigator.geolocation.getCurrentPosition(
     (pos) => {
-      const center = L.latLng(pos.coords.latitude, pos.coords.longitude);
+      const center = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
       showUserLocation(center);
-      map.setView(center, zoomForRadius(center, RADIUS_KM));
+      map.setBounds(boundsForRadius(center, RADIUS_KM));
       renderVisible();
     },
     (err) => {
@@ -573,20 +582,6 @@ function requestLocation() {
     { timeout: 8000, maximumAge: 5 * 60 * 1000 }
   );
 }
-
-const LocateControl = L.Control.extend({
-  options: { position: "bottomright" },
-  onAdd: function () {
-    const btn = L.DomUtil.create("button", "locate-btn");
-    btn.type = "button";
-    btn.title = "현재 위치로 이동";
-    btn.innerHTML = "⦿";
-    L.DomEvent.disableClickPropagation(btn);
-    L.DomEvent.on(btn, "click", goToUserLocation);
-    return btn;
-  },
-});
-map.addControl(new LocateControl());
 
 document.querySelectorAll(".filter-chip").forEach((chip) => {
   chip.addEventListener("click", () => {
@@ -601,8 +596,6 @@ document.querySelectorAll(".filter-chip").forEach((chip) => {
     if (dataLoaded) renderVisible();
   });
 });
-
-const lastUpdatedEl = document.getElementById("last-updated");
 
 function formatKstTime(iso) {
   if (!iso) return null;
@@ -654,7 +647,48 @@ async function loadData() {
   }
 }
 
-loadData();
+function initMap() {
+  const mapContainer = document.getElementById("map");
+  map = new kakao.maps.Map(mapContainer, {
+    center: new kakao.maps.LatLng(DEFAULT_CENTER[0], DEFAULT_CENTER[1]),
+    level: DEFAULT_LEVEL,
+  });
+  map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
+
+  clusterer = new kakao.maps.MarkerClusterer({
+    map,
+    averageCenter: true,
+    minLevel: CLUSTER_MIN_LEVEL,
+    gridSize: 60,
+  });
+
+  infoWindow = new kakao.maps.InfoWindow({ removable: false, zIndex: 20 });
+
+  // 지도 빈 곳을 클릭하면 팝업을 닫는다(마커 클릭은 이 이벤트로 안 번짐).
+  kakao.maps.event.addListener(map, "click", () => {
+    if (popupOpen) closePopup();
+  });
+
+  // 사용자가 지도를 이동/확대·축소한 뒤, 완전히 멈추고 나서
+  // MOVE_SETTLE_DELAY_MS만큼 더 기다렸다가 현재 화면 기준으로 다시 표출한다.
+  kakao.maps.event.addListener(map, "idle", () => {
+    if (!dataLoaded || popupOpen) return;
+    if (moveEndTimer) clearTimeout(moveEndTimer);
+    moveEndTimer = setTimeout(renderVisible, MOVE_SETTLE_DELAY_MS);
+  });
+
+  const locateBtn = document.createElement("button");
+  locateBtn.type = "button";
+  locateBtn.className = "locate-btn";
+  locateBtn.title = "현재 위치로 이동";
+  locateBtn.innerHTML = "⦿";
+  locateBtn.addEventListener("click", goToUserLocation);
+  mapContainer.appendChild(locateBtn);
+
+  loadData();
+}
+
+kakao.maps.load(initMap);
 </script>
 </body>
 </html>
