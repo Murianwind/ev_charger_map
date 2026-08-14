@@ -478,6 +478,21 @@ function makeMarker(feature) {
   return marker;
 }
 
+// 현재 화면에 보여줄 개수가 이 값 이하면, 클러스터링(숫자 뭉치) 없이
+// 전부 개별 마커로 그대로 찍는다 — 필터를 걸어서 대상이 적어졌을 때
+// (예: NACS+DC콤보+NACS+수퍼차저만 켜면 전국이 200~300개 수준) 전국을
+// 봐도 다 흩어져서 보이게 하기 위함이다. 개수가 많으면(예: 필터 없이
+// AC완속까지 전부) 여전히 클러스터링해야 겹쳐서 안 보이는 걸 막는다.
+const UNCLUSTER_THRESHOLD = 500;
+
+let plainMarkers = []; // 클러스터러를 안 거치고 지도에 직접 얹은 마커들
+
+function clearAllMarkers() {
+  clusterer.clear();
+  plainMarkers.forEach((m) => m.setMap(null));
+  plainMarkers = [];
+}
+
 // 현재 지도 화면(뷰포트) 안에 들어오는 충전소만 걸러 다시 그린다.
 // 너무 많으면(MAX_MARKERS 초과) 성능 보호를 위해 앞부분만 그리고 안내 문구를 보여준다.
 function renderVisible() {
@@ -489,9 +504,15 @@ function renderVisible() {
 
   const capped = withinBounds.length > MAX_MARKERS;
   const toRender = capped ? withinBounds.slice(0, MAX_MARKERS) : withinBounds;
+  const markers = toRender.map(makeMarker);
 
-  clusterer.clear();
-  clusterer.addMarkers(toRender.map(makeMarker));
+  clearAllMarkers();
+  if (withinBounds.length <= UNCLUSTER_THRESHOLD) {
+    markers.forEach((m) => m.setMap(map));
+    plainMarkers = markers;
+  } else {
+    clusterer.addMarkers(markers);
+  }
 
   statusBar.textContent = capped
     ? `현재 화면에 ${withinBounds.length.toLocaleString()}개소 중 ${MAX_MARKERS.toLocaleString()}개만 표시 중 — 더 확대해 보세요`
