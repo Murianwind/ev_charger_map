@@ -289,14 +289,19 @@ const DEFAULT_ZOOM = 7;
 
 const map = L.map("map", { zoomControl: true }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
 
-L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: '&copy; OpenStreetMap contributors',
   maxZoom: 19,
 }).addTo(map);
 
 const clusterGroup = L.markerClusterGroup({
   maxClusterRadius: 45,
   spiderfyOnMaxZoom: true,
+  // 이 줌 이상(더 확대)에서는 클러스터링을 아예 끄고 마커를 있는 그대로
+  // 각자 찍는다 — 웬만큼 확대하면 실제 거리만큼 자연스럽게 떨어져 보여서
+  // 숫자 뭉치 없이도 읽기 편하다. 이보다 축소하면(서울처럼 밀집된 지역)
+  // 여전히 숫자로 묶어야 안 겹쳐 보인다.
+  disableClusteringAtZoom: 15,
 });
 map.addLayer(clusterGroup);
 

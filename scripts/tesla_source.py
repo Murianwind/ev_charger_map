@@ -47,6 +47,9 @@ def fetch_tesla_superchargers():
     그 좌표 근처 "테슬라"로 등록된 장소가 있는지 검색해서 있으면 그 한글
     이름으로 대체한다. 등록된 장소가 없으면(아직 카카오맵에 안 올라온 경우)
     기존 영문 이름을 정리해서 그대로 쓴다.
+
+    V2 전용(또는 버전 구분이 없어 확인 불가한) 슈퍼차저는 제외한다 — V3 이상만
+    보여달라는 요청에 따른 것이다.
     """
     try:
         sites = fetch_json(SUPERCHARGE_INFO_URL)
@@ -55,6 +58,7 @@ def fetch_tesla_superchargers():
         return []
 
     stations = []
+    skipped_below_v3 = 0
     for site in sites:
         addr = site.get("address") or {}
         country = addr.get("country") or ""
@@ -69,6 +73,14 @@ def fetch_tesla_superchargers():
             continue
 
         stalls = site.get("stalls") or {}
+
+        # V3 미만(V2 전용 등)은 지도에서 뺀다. v3/v4 스톨이 하나도 없으면
+        # 제외한다 — 구버전만 있거나, stalls에 버전 구분이 아예 없어서
+        # V3 이상인지 확인이 안 되는 경우 둘 다 안전하게 걸러낸다.
+        if not (stalls.get("v3") or stalls.get("v4")):
+            skipped_below_v3 += 1
+            continue
+
         total_stalls = site.get("stallCount") or sum(
             v for k, v in stalls.items() if k in STALL_VERSION_LABELS
         )
@@ -125,5 +137,5 @@ def fetch_tesla_superchargers():
             }
         )
 
-    print(f"[supercharge.info] 한국 내 운영중 슈퍼차저 {len(stations)}개소")
+    print(f"[supercharge.info] 한국 내 운영중 슈퍼차저 {len(stations)}개소 (V3 미만 제외: {skipped_below_v3}건)")
     return stations
