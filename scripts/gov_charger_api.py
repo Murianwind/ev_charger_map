@@ -88,7 +88,13 @@ EXCLUDED_KIND_DETAILS = {
 #   ("외부인 사용불가", "입주민만 사용가능 거주자 외출입제한")를 커버한다.
 # - "제한될 수": "시설 상황에 따라 이용이 제한될 수 있음"처럼 조건부/불확실한
 #   제한 문구를 커버한다 (실제로 이용 불가했던 사례에서 발견).
-NON_OPEN_KEYWORDS = ("비개방", "불가", "금지", "외부인", "입주민", "거주자", "제한될 수", '내방객 전용')
+# - "내방객": "내방객 전용"처럼 특정 시설 방문객만 쓸 수 있는 경우를 커버한다.
+NON_OPEN_KEYWORDS = ("비개방", "불가", "금지", "외부인", "입주민", "거주자", "제한될 수", "내방객")
+
+# 교도소/구치소 등은 kindDetail 47개 카테고리에 대응하는 항목이 아예 없어서
+# (가이드 문서 기준), kindDetail로는 못 걸러낸다. 이런 시설은 보통 시설명에
+# 직접 이름이 들어있으니, statNm(충전소명) 텍스트로 따로 거른다.
+RESTRICTED_NAME_KEYWORDS = ("교도소", "구치소", "소년원", "보호관찰소")
 
 # 가이드 문서 공식 zcode(시도 코드) 표. 전국을 매번 한 번에 스캔하면 하루 API
 # 호출 한도(1,000건)를 계속 위태롭게 넘나들게 되어, 요일별로 나눠 담당한다.
@@ -179,6 +185,9 @@ def passes_filter(item):
 
     text_fields = f"{item.get('limitDetail') or ''} {item.get('useTime') or ''}"
     if any(keyword in text_fields for keyword in NON_OPEN_KEYWORDS):
+        return False
+
+    if any(keyword in (item.get("statNm") or "") for keyword in RESTRICTED_NAME_KEYWORDS):
         return False
 
     if item.get("limitYn") != "N":
