@@ -292,7 +292,7 @@ const STATUS_COLOR = {
   DEFAULT: "#9a968a", // 통신이상 / 운영중지 / 점검중 / 알수없음
 };
 
-const RADIUS_KM = 2;
+const RADIUS_KM = 5;
 const MOVE_SETTLE_DELAY_MS = 800; // 지도 이동이 끝난 뒤 이 시간만큼 더 기다렸다가 재표출
 const DEFAULT_CENTER = [36.4, 127.9];
 // 카카오 지도는 레벨 숫자가 작을수록 확대(=Leaflet 줌과 반대 방향)이다.
@@ -534,6 +534,16 @@ function boundsForRadius(center, radiusKm) {
   return new kakao.maps.LatLngBounds(sw, ne);
 }
 
+// map.setBounds()는 요청한 범위가 절대 안 잘리게 하려고, 딱 맞는 중간 확대
+// 단계가 없으면 한 단계 더 넓게(축소된 쪽으로) 반올림한다. 카카오 레벨은
+// 연속값이 아니라 정수 단계라서, 이 반올림 때문에 실제 화면에 보이는
+// 범위가 요청한 반경보다 눈에 띄게(체감상 2배 정도) 넓어 보일 수 있다.
+// setBounds 직후 레벨을 한 단계 낮춰(더 확대해서) 이걸 보정한다.
+function setBoundsForRadius(center, radiusKm) {
+  map.setBounds(boundsForRadius(center, radiusKm));
+  map.setLevel(map.getLevel() - 1);
+}
+
 // 현재 위치 마커 + 반경 안내 원을 표시(있으면 위치만 갱신)
 function showUserLocation(center) {
   userLatLng = center;
@@ -575,7 +585,7 @@ function showUserLocation(center) {
 // 모르면(아직 못 받았거나 최초 거부 후 다시 시도) 새로 요청한다.
 function goToUserLocation() {
   if (userLatLng) {
-    map.setBounds(boundsForRadius(userLatLng, RADIUS_KM));
+    setBoundsForRadius(userLatLng, RADIUS_KM);
     renderVisible();
   } else {
     requestLocation();
@@ -592,7 +602,7 @@ function requestLocation() {
     (pos) => {
       const center = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
       showUserLocation(center);
-      map.setBounds(boundsForRadius(center, RADIUS_KM));
+      setBoundsForRadius(center, RADIUS_KM);
       renderVisible();
     },
     (err) => {
