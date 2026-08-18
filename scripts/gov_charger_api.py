@@ -6,9 +6,9 @@
 - 원본 item -> station dict 변환 (GeoJSON 변환은 geojson_store의 책임)
 
 주소 텍스트 파싱/좌표 검증은 address_parser로, 한도초과 쿨다운 상태 관리는
-quota_cooldown으로, 좌표 검증/보정 자체는 kakao_geocoder로 각각 분리돼 있다
-— 이 모듈은 그것들을 조합해 "환경공단 API에서 어떻게 데이터를 받아 station
-dict로 만드는가"만 담당한다.
+quota_cooldown으로, 좌표 검증/보정 자체는 kakao_geocoder로, 이용시간 텍스트
+파싱은 operating_hours로 각각 분리돼 있다 — 이 모듈은 그것들을 조합해
+"환경공단 API에서 어떻게 데이터를 받아 station dict로 만드는가"만 담당한다.
 """
 import time
 import urllib.parse
@@ -17,6 +17,7 @@ from collections import OrderedDict
 from address_parser import coordinates_plausible, split_addr_and_location
 from http_client import QuotaExceededError, fetch_json
 from kakao_geocoder import verify_and_correct
+from operating_hours import parse_use_time
 from quota_cooldown import in_cooldown, start_cooldown
 
 API_BASE = "https://apis.data.go.kr/B552584/EvCharger"
@@ -275,6 +276,12 @@ def build_stations(items):
                 "addrDetail": item.get("addrDetail", ""),
                 "location": location,
                 "useTime": item.get("useTime", ""),
+                # useTime 원본 텍스트를 프론트엔드가 바로 쓸 수 있게 구조화해둔다
+                # (예: {"kind":"weekday_only","start":540,"end":1080}).
+                # "지금 몇 시인지"는 브라우저에서 계속 바뀌는 값이라 서버가
+                # 미리 "지금 열려있는지"까지 계산해둘 수는 없고, 여기서는
+                # 텍스트 파싱까지만 한다.
+                "hours": parse_use_time(item.get("useTime", "")),
                 "busiNm": item.get("busiNm", ""),
                 "busiCall": item.get("busiCall", ""),
                 "parkingFree": item.get("parkingFree", ""),

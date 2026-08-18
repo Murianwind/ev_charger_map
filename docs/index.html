@@ -262,7 +262,8 @@
         <span class="filter-chip" data-type="09">NACS</span> /
         <span class="filter-chip" data-type="10">DC콤보+NACS</span> /
         <span class="filter-chip" data-type="TESLA">수퍼차저</span> /
-        <span class="filter-chip" id="paid-parking-toggle">유료주차 포함</span>
+        <span class="filter-chip" id="paid-parking-toggle">유료주차 포함</span> /
+        <span class="filter-chip" id="open-now-toggle">지금 운영중만</span>
       </div>
     </div>
     <div class="legend">
@@ -340,6 +341,46 @@ function stationMatchesParkingFilter(feature) {
   const props = feature.properties;
   if (props.isTesla) return true; // 테슬라는 parkingFree 개념이 없음(정보 자체가 없음)
   return props.parkingFree === "Y";
+}
+
+// 기본값(꺼짐): 이용시간과 무관하게 다 표시. 켜면 지금 시각 기준으로 운영시간이
+// 아닌 곳은 숨긴다. hours.kind가 "unknown"(파싱 실패/정보 없음)이면 판단할
+// 근거가 없으니 안전하게 항상 표시한다.
+let showOpenNowOnly = false;
+
+// start/end는 자정 기준 분(0~1439). start > end면 자정을 넘기는(익일까지)
+// 운영시간으로 보고 감싸서 비교한다(예: 22:00~06:00).
+function isWithinRange(nowMinutes, start, end) {
+  if (start === end) return true;
+  if (start < end) return nowMinutes >= start && nowMinutes < end;
+  return nowMinutes >= start || nowMinutes < end;
+}
+
+function isOpenNow(hours) {
+  if (!hours || hours.kind === "always" || hours.kind === "unknown") return true;
+
+  const now = new Date();
+  const isWeekend = now.getDay() === 0 || now.getDay() === 6; // 0=일, 6=토
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  if (hours.kind === "daily") {
+    return isWithinRange(nowMinutes, hours.start, hours.end);
+  }
+  if (hours.kind === "weekday_only") {
+    if (isWeekend) return false; // 주말 언급이 없는 평일 전용은 주말엔 숨긴다
+    return isWithinRange(nowMinutes, hours.start, hours.end);
+  }
+  if (hours.kind === "weekday_weekend") {
+    return isWeekend
+      ? isWithinRange(nowMinutes, hours.weekendStart, hours.weekendEnd)
+      : isWithinRange(nowMinutes, hours.start, hours.end);
+  }
+  return true;
+}
+
+function stationMatchesHoursFilter(feature) {
+  if (!showOpenNowOnly) return true;
+  return isOpenNow(feature.properties.hours);
 }
 
 function stationColor(chargers) {
@@ -516,7 +557,8 @@ function renderVisible() {
     return (
       bounds.contain(new kakao.maps.LatLng(lat, lng)) &&
       stationMatchesTypeFilter(f) &&
-      stationMatchesParkingFilter(f)
+      stationMatchesParkingFilter(f) &&
+      stationMatchesHoursFilter(f)
     );
   });
 
@@ -649,6 +691,12 @@ document.querySelectorAll(".filter-chip[data-type]").forEach((chip) => {
 document.getElementById("paid-parking-toggle").addEventListener("click", (e) => {
   showPaidParking = !showPaidParking;
   e.currentTarget.classList.toggle("active", showPaidParking);
+  if (dataLoaded) renderVisible();
+});
+
+document.getElementById("open-now-toggle").addEventListener("click", (e) => {
+  showOpenNowOnly = !showOpenNowOnly;
+  e.currentTarget.classList.toggle("active", showOpenNowOnly);
   if (dataLoaded) renderVisible();
 });
 

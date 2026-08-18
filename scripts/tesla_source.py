@@ -1,6 +1,7 @@
 """supercharge.info(테슬라 슈퍼차저 커뮤니티 오픈 데이터베이스) 전용 로직."""
 from http_client import fetch_json
 from kakao_geocoder import find_nearby_place_name, reverse_geocode
+from operating_hours import parse_use_time
 
 SUPERCHARGE_INFO_URL = "https://supercharge.info/service/supercharge/allSites"
 
@@ -114,6 +115,8 @@ def fetch_tesla_superchargers():
             display_addr = " ".join(filter(None, [addr.get("state"), addr.get("city")]))
             display_addr_detail = addr.get("street") or ""
 
+        display_use_time = site.get("hours") or "24시간 이용가능"
+
         stations.append(
             {
                 "statId": f"TESLA-{site.get('id')}",
@@ -121,7 +124,8 @@ def fetch_tesla_superchargers():
                 "addr": display_addr,
                 "addrDetail": display_addr_detail,
                 "location": site.get("facilityName") or "",
-                "useTime": site.get("hours") or "24시간 이용가능",
+                "useTime": display_use_time,
+                "hours": parse_use_time(display_use_time),
                 "busiNm": "테슬라",
                 "busiCall": "",
                 "parkingFree": "Y",
