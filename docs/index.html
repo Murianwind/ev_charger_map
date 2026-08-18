@@ -261,7 +261,8 @@
         <span class="filter-chip" data-type="02">AC완속</span> /
         <span class="filter-chip" data-type="09">NACS</span> /
         <span class="filter-chip" data-type="10">DC콤보+NACS</span> /
-        <span class="filter-chip" data-type="TESLA">수퍼차저</span>
+        <span class="filter-chip" data-type="TESLA">수퍼차저</span> /
+        <span class="filter-chip" id="paid-parking-toggle">유료주차 포함</span>
       </div>
     </div>
     <div class="legend">
@@ -292,7 +293,7 @@ const STATUS_COLOR = {
   DEFAULT: "#9a968a", // 통신이상 / 운영중지 / 점검중 / 알수없음
 };
 
-const RADIUS_KM = 1.5;
+const RADIUS_KM = 5;
 const MOVE_SETTLE_DELAY_MS = 800; // 지도 이동이 끝난 뒤 이 시간만큼 더 기다렸다가 재표출
 const DEFAULT_CENTER = [36.4, 127.9];
 // 카카오 지도는 레벨 숫자가 작을수록 확대(=Leaflet 줌과 반대 방향)이다.
@@ -326,6 +327,19 @@ function stationMatchesTypeFilter(feature) {
   const props = feature.properties;
   if (activeTypeFilters.has("TESLA") && props.isTesla) return true;
   return (props.chargers || []).some((c) => activeTypeFilters.has(c.chgerType));
+}
+
+// 기본값(꺼짐): 무료 주차만 표시. 켜면 유료주차 충전소도 같이 보여준다.
+// parkingFree가 "Y"가 아닌 경우(유료 또는 확인 필요) 전부 "유료주차 포함"
+// 토글 대상으로 묶는다 — 정보가 불확실한 것도 무조건 숨기기보다는, 켜면
+// 볼 수 있게 해두는 쪽이 안전하다.
+let showPaidParking = false;
+
+function stationMatchesParkingFilter(feature) {
+  if (showPaidParking) return true;
+  const props = feature.properties;
+  if (props.isTesla) return true; // 테슬라는 parkingFree 개념이 없음(정보 자체가 없음)
+  return props.parkingFree === "Y";
 }
 
 function stationColor(chargers) {
@@ -499,7 +513,11 @@ function renderVisible() {
   const bounds = map.getBounds();
   const withinBounds = allFeatures.filter((f) => {
     const [lng, lat] = f.geometry.coordinates;
-    return bounds.contain(new kakao.maps.LatLng(lat, lng)) && stationMatchesTypeFilter(f);
+    return (
+      bounds.contain(new kakao.maps.LatLng(lat, lng)) &&
+      stationMatchesTypeFilter(f) &&
+      stationMatchesParkingFilter(f)
+    );
   });
 
   const capped = withinBounds.length > MAX_MARKERS;
@@ -614,7 +632,7 @@ function requestLocation() {
   );
 }
 
-document.querySelectorAll(".filter-chip").forEach((chip) => {
+document.querySelectorAll(".filter-chip[data-type]").forEach((chip) => {
   chip.addEventListener("click", () => {
     const type = chip.dataset.type;
     if (activeTypeFilters.has(type)) {
@@ -626,6 +644,12 @@ document.querySelectorAll(".filter-chip").forEach((chip) => {
     }
     if (dataLoaded) renderVisible();
   });
+});
+
+document.getElementById("paid-parking-toggle").addEventListener("click", (e) => {
+  showPaidParking = !showPaidParking;
+  e.currentTarget.classList.toggle("active", showPaidParking);
+  if (dataLoaded) renderVisible();
 });
 
 function formatKstTime(iso) {
