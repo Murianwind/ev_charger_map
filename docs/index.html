@@ -1011,9 +1011,8 @@ function renderLastUpdated(meta) {
     parts.push(`상태갱신 ${formatKstTime(status.time)}${skipLabel(status.status)}`);
   }
 
-  const hasRegionDetail = meta.regionUpdates && Object.keys(meta.regionUpdates).length > 0;
-  lastUpdatedEl.textContent = parts.join(" · ") + (hasRegionDetail ? " (지역별 보기 ▾)" : "");
-  lastUpdatedEl.classList.toggle("has-detail", !!hasRegionDetail);
+  lastUpdatedEl.textContent = parts.join(" · ") + " (지역별 보기 ▾)";
+  lastUpdatedEl.classList.add("has-detail");
   // meta가 새로 로드될 때마다(새로고침 등) 상세 패널은 일단 접어둔다.
   detailEl.classList.add("hidden");
 }
@@ -1022,12 +1021,22 @@ function renderLastUpdated(meta) {
 // 펼쳐서 보여준다 — 가장 오래된(=다음에 갱신이 필요할 가능성이 높은)
 // 지역이 위로 오도록 정렬한다.
 function toggleRegionDetail() {
-  if (!lastMeta || !lastMeta.regionUpdates) return;
   const detailEl = document.getElementById("regionUpdateDetail");
   if (!detailEl.classList.contains("hidden")) {
     detailEl.classList.add("hidden");
     return;
   }
+
+  const hasData = lastMeta && lastMeta.regionUpdates && Object.keys(lastMeta.regionUpdates).length > 0;
+  if (!hasData) {
+    // 이 기능 반영 이후로 지역 갱신이 아직 한 번도 안 돈 상태 — 조용히
+    // 무시하는 대신, 왜 안 보이는지 안내한다.
+    detailEl.innerHTML =
+      `<div class="region-row"><span>아직 지역별 기록이 없습니다 — 다음 지역 갱신부터 쌓여요.</span></div>`;
+    detailEl.classList.remove("hidden");
+    return;
+  }
+
   const entries = Object.values(lastMeta.regionUpdates).sort(
     (a, b) => new Date(a.time) - new Date(b.time)
   );
