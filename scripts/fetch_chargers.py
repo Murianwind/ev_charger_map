@@ -21,6 +21,7 @@ FULL_SEED=1로 실행한다 (모든 지역을 한 번에 순회 — 호출량이
 """
 import os
 import sys
+from collections import Counter
 from datetime import datetime
 
 from geojson_store import (
@@ -31,7 +32,7 @@ from geojson_store import (
     replace_tesla,
     save_geojson,
 )
-from gov_charger_api import ALL_ZCODES, DAY_ZCODE_GROUPS, fetch_region
+from gov_charger_api import ALL_ZCODES, DAY_ZCODE_GROUPS, ZCODE_NAMES, fetch_region
 from kst_time import KST, now_kst_iso
 from tesla_source import fetch_tesla_superchargers
 
@@ -106,12 +107,26 @@ def main():
         region_count = 0
     elif stations is not None:
         geojson = replace_regions(geojson, zcodes, stations)
+        now = now_kst_iso()
         geojson.setdefault("meta", {})["lastFullUpdate"] = {
-            "time": now_kst_iso(),
+            "time": now,
             "zcodes": zcodes,
             "count": len(stations),
             "status": "ok",
         }
+        # 지역(zcode)별로 "실제로 언제 갱신됐는지"도 따로 기록해둔다.
+        # lastFullUpdate는 "가장 최근 실행이 어느 지역을 건드렸는지"만
+        # 남기고 매번 덮어써져서, 다른 지역들이 언제 마지막으로 갱신됐는지는
+        # 알 수 없었다 — 프론트엔드가 지역별 상세를 보여줄 수 있도록 여기
+        # 별도로 누적 기록한다(이번에 안 건드린 지역은 그대로 유지됨).
+        per_zcode_count = Counter(s.get("zcode") for s in stations)
+        region_updates = geojson.setdefault("meta", {}).setdefault("regionUpdates", {})
+        for zcode in zcodes:
+            region_updates[zcode] = {
+                "name": ZCODE_NAMES.get(zcode, zcode),
+                "time": now,
+                "count": per_zcode_count.get(zcode, 0),
+            }
         region_count = len(stations)
     else:
         geojson.setdefault("meta", {})["lastFullUpdate"] = {

@@ -168,6 +168,23 @@
     padding: 0 20px 4px;
     border-bottom: 1px solid var(--line);
   }
+  #last-updated.has-detail { cursor: pointer; }
+  #last-updated.has-detail:hover { color: #6b6a63; }
+
+  #regionUpdateDetail {
+    font-size: 11px;
+    color: #6b6a63;
+    padding: 6px 20px;
+    border-bottom: 1px solid var(--line);
+    background: #faf9f5;
+  }
+  #regionUpdateDetail.hidden { display: none; }
+  #regionUpdateDetail .region-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 2px 0;
+  }
 
   #map {
     flex: 1;
@@ -339,6 +356,7 @@
   </header>
   <div id="status-bar">불러오는 중...</div>
   <div id="last-updated"></div>
+  <div id="regionUpdateDetail" class="hidden"></div>
   <div id="map"></div>
 </div>
 
@@ -967,9 +985,15 @@ function formatKstTime(iso) {
   });
 }
 
+let lastMeta = null;
+
 function renderLastUpdated(meta) {
+  lastMeta = meta;
+  const detailEl = document.getElementById("regionUpdateDetail");
   if (!meta) {
     lastUpdatedEl.textContent = "";
+    lastUpdatedEl.classList.remove("has-detail");
+    detailEl.classList.add("hidden");
     return;
   }
   const skipLabel = (status) => {
@@ -986,8 +1010,38 @@ function renderLastUpdated(meta) {
   if (status) {
     parts.push(`상태갱신 ${formatKstTime(status.time)}${skipLabel(status.status)}`);
   }
-  lastUpdatedEl.textContent = parts.join(" · ");
+
+  const hasRegionDetail = meta.regionUpdates && Object.keys(meta.regionUpdates).length > 0;
+  lastUpdatedEl.textContent = parts.join(" · ") + (hasRegionDetail ? " (지역별 보기 ▾)" : "");
+  lastUpdatedEl.classList.toggle("has-detail", !!hasRegionDetail);
+  // meta가 새로 로드될 때마다(새로고침 등) 상세 패널은 일단 접어둔다.
+  detailEl.classList.add("hidden");
 }
+
+// "지역갱신 ..." 표시를 누르면, 지역(zcode)별로 실제 마지막 갱신 시각을
+// 펼쳐서 보여준다 — 가장 오래된(=다음에 갱신이 필요할 가능성이 높은)
+// 지역이 위로 오도록 정렬한다.
+function toggleRegionDetail() {
+  if (!lastMeta || !lastMeta.regionUpdates) return;
+  const detailEl = document.getElementById("regionUpdateDetail");
+  if (!detailEl.classList.contains("hidden")) {
+    detailEl.classList.add("hidden");
+    return;
+  }
+  const entries = Object.values(lastMeta.regionUpdates).sort(
+    (a, b) => new Date(a.time) - new Date(b.time)
+  );
+  detailEl.innerHTML = entries
+    .map(
+      (e) =>
+        `<div class="region-row"><span>${escapeHtml(e.name)}</span>` +
+        `<span>${formatKstTime(e.time)} · ${e.count.toLocaleString()}개소</span></div>`
+    )
+    .join("");
+  detailEl.classList.remove("hidden");
+}
+
+lastUpdatedEl.addEventListener("click", toggleRegionDetail);
 
 async function loadData() {
   statusBar.textContent = "불러오는 중...";
