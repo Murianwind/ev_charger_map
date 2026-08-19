@@ -1021,11 +1021,19 @@ function goToStation(feature) {
   infoWindow.setPosition(latlng);
   infoWindow.open(map);
   popupOpen = true;
-  hideSearchResults();
+  clearSearch();
 }
 
 function hideSearchResults() {
   document.getElementById("searchResults").classList.add("hidden");
+}
+
+// 결과를 실제로 선택해서 이동했을 때만 검색창 글자까지 비운다. 결과 바깥을
+// 클릭해서 그냥 닫을 때(hideSearchResults만 호출되는 경우)는 입력했던 검색어를
+// 그대로 남겨둔다 — 아직 고르는 중일 수도 있으니 지워버리면 불편하다.
+function clearSearch() {
+  document.getElementById("searchInput").value = "";
+  hideSearchResults();
 }
 
 function renderSearchResults(placeResult, stationMatches, query) {
@@ -1070,7 +1078,7 @@ function renderSearchResults(placeResult, stationMatches, query) {
           setBoundsForRadius(latlng, RADIUS_KM);
         }
         renderVisible();
-        hideSearchResults();
+        clearSearch();
       } else {
         goToStation(stationMatches[parseInt(el.dataset.idx, 10)]);
       }
