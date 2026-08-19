@@ -91,7 +91,7 @@ EXCLUDED_KIND_DETAILS = {
 # 같은 다른 안전장치는 그대로 다 적용된다.
 FORCE_INCLUDE_NAME_KEYWORDS = (
     "하나로마트", "이마트", "롯데마트", "홈플러스", "코스트코",
-    "GS더프레시", "메가마트", "킴스클럽", "노브랜드", "트레이더스",
+    "GS더프레시", "메가마트", "킴스클럽", "노브랜드", "트레이더스", "대학교",
 )
 # limitDetail 또는 useTime에 이 문구가 있으면 limitYn=N/kindDetail 분류와 무관하게 제외
 # (아파트 등이 kindDetail로 정확히 분류 안 돼 있는 경우가 있어 텍스트로 한 번 더 거른다).
