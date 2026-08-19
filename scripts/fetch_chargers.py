@@ -44,10 +44,30 @@ def get_service_key():
     return key
 
 
+WEEKDAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"]  # datetime.weekday() 순서와 동일
+
+
 def todays_zcodes():
     if os.environ.get("FULL_SEED") == "1":
         print("FULL_SEED=1: 전체 지역을 한 번에 갱신합니다 (호출량 큼)")
         return [z for group in DAY_ZCODE_GROUPS for z in group]
+
+    # 수동 실행 시 "오늘 담당 지역"이 아니라 특정 요일의 담당 지역을 직접
+    # 고를 수 있게 한다(예: 화요일 갱신이 실패해서 놓쳤을 때, 목요일에
+    # 수동으로 "화" 담당 지역만 다시 돌리고 싶은 경우). 자동 실행(cron이
+    # 매일 새벽 dispatch)이나 값이 "오늘"이면 실제 오늘 요일 그대로 쓴다.
+    # 워크플로 드롭다운 옵션엔 "월(경기·충남·제주)"처럼 지역명이 같이
+    # 붙어있어서(어느 지역인지 보이게), 맨 앞 글자만 요일로 파싱한다.
+    region_day = (os.environ.get("REGION_DAY") or "").strip()
+    if region_day and region_day != "오늘":
+        weekday_char = region_day[0]
+        if weekday_char not in WEEKDAY_LABELS:
+            print(f"경고: REGION_DAY={region_day!r}를 알 수 없어 오늘 담당 지역으로 대체합니다.")
+        else:
+            weekday = WEEKDAY_LABELS.index(weekday_char)
+            print(f"REGION_DAY={region_day}: 해당 요일의 담당 지역을 갱신합니다")
+            return DAY_ZCODE_GROUPS[weekday]
+
     weekday = datetime.now(KST).weekday()  # 월=0 ... 일=6
     return DAY_ZCODE_GROUPS[weekday]
 
