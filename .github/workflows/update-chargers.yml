@@ -7,6 +7,22 @@ on:
         description: "전체 지역을 한 번에 갱신 (전국 데이터 초기 채우기용, 평소엔 체크하지 않음)"
         type: boolean
         default: false
+      region_day:
+        description: "갱신할 지역 (요일별 담당 로테이션 기준). full_seed 체크 시 이 값은 무시됨"
+        type: choice
+        default: "오늘"
+        # 옵션 글자 자체가 곧 전달되는 값이라(드롭다운에 값/표시 분리가 안 됨),
+        # 지역명을 괄호로 같이 적어둔다. scripts/gov_charger_api.py의
+        # DAY_ZCODE_GROUPS 매핑이 바뀌면 여기도 같이 고쳐야 한다.
+        options:
+          - "오늘"
+          - "월(경기·충남·제주)"
+          - "화(서울·광주전남·세종)"
+          - "수(부산·대전)"
+          - "목(경남·충북)"
+          - "금(인천·강원)"
+          - "토(경북·전북)"
+          - "일(대구·울산)"
 
 # 러너가 한동안 오프라인이면 대기열에 여러 번 쌓일 수 있다. 같은
 # concurrency 그룹으로 묶으면 "아직 시작 안 한(대기 중)" 이전 실행은
@@ -36,6 +52,7 @@ jobs:
           EV_SERVICE_KEY: ${{ secrets.EV_SERVICE_KEY }}
           KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
           FULL_SEED: ${{ inputs.full_seed && '1' || '' }}
+          REGION_DAY: ${{ inputs.region_day }}
         run: python scripts/fetch_chargers.py
 
       - name: Commit updated data
@@ -43,6 +60,7 @@ jobs:
           EV_SERVICE_KEY: ${{ secrets.EV_SERVICE_KEY }}
           KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
           FULL_SEED: ${{ inputs.full_seed && '1' || '' }}
+          REGION_DAY: ${{ inputs.region_day }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
