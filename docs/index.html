@@ -263,7 +263,7 @@
         <span class="filter-chip" data-type="10">DC콤보+NACS</span> /
         <span class="filter-chip" data-type="TESLA">수퍼차저</span> /
         <span class="filter-chip" id="paid-parking-toggle">유료주차 포함</span> /
-        <span class="filter-chip" id="open-now-toggle">지금 운영중만</span>
+        <span class="filter-chip" id="show-closed-toggle">운영종료 포함</span>
       </div>
     </div>
     <div class="legend">
@@ -294,7 +294,7 @@ const STATUS_COLOR = {
   DEFAULT: "#9a968a", // 통신이상 / 운영중지 / 점검중 / 알수없음
 };
 
-const RADIUS_KM = 1.5;
+const RADIUS_KM = 5;
 const MOVE_SETTLE_DELAY_MS = 800; // 지도 이동이 끝난 뒤 이 시간만큼 더 기다렸다가 재표출
 const DEFAULT_CENTER = [36.4, 127.9];
 // 카카오 지도는 레벨 숫자가 작을수록 확대(=Leaflet 줌과 반대 방향)이다.
@@ -343,10 +343,10 @@ function stationMatchesParkingFilter(feature) {
   return props.parkingFree === "Y";
 }
 
-// 기본값(꺼짐): 이용시간과 무관하게 다 표시. 켜면 지금 시각 기준으로 운영시간이
-// 아닌 곳은 숨긴다. hours.kind가 "unknown"(파싱 실패/정보 없음)이면 판단할
-// 근거가 없으니 안전하게 항상 표시한다.
-let showOpenNowOnly = false;
+// 기본값(꺼짐): 지금 시각 기준으로 운영시간이 아닌 곳은 자동으로 숨긴다.
+// 켜면(운영종료 포함) 그런 곳도 같이 보여준다. hours.kind가
+// "unknown"(파싱 실패/정보 없음)이면 판단할 근거가 없으니 안전하게 항상 표시한다.
+let showClosedStations = false;
 
 // start/end는 자정 기준 분(0~1439). start > end면 자정을 넘기는(익일까지)
 // 운영시간으로 보고 감싸서 비교한다(예: 22:00~06:00).
@@ -379,8 +379,122 @@ function isOpenNow(hours) {
 }
 
 function stationMatchesHoursFilter(feature) {
-  if (!showOpenNowOnly) return true;
-  return isOpenNow(feature.properties.hours);
+  if (showClosedStations) return true; // 운영종료 포함 켜짐 -> 필터 안 함
+  return isOpenNow(feature.properties.hours); // 기본값 -> 지금 운영중인 곳만
+}
+
+// ---- 즐겨찾기(기기/브라우저 넘어 동기화) ----
+// 로그인 없이 여러 기기에서 같은 즐겨찾기를 보려면, 기기마다 "동기화 코드"를
+// 하나씩 갖고 그 코드로 구글시트에 저장/조회한다. 코드를 다른 기기에도
+// 똑같이 입력해두면 같은 목록을 공유한다.
+const FAVORITES_WEBAPP_URL = "여기에_즐겨찾기_웹앱_URL";
+const FAVORITES_TOKEN = "여기에_토큰_문자열_바꾸기";
+const FAVORITES_CODE_KEY = "ev_charger_map_favorites_code";
+
+let favoriteStatIds = new Set();
+let favoritesCode = null;
+try {
+  favoritesCode = localStorage.getItem(FAVORITES_CODE_KEY);
+} catch (err) {
+  console.warn("localStorage 접근 실패(시크릿 모드 등):", err);
+}
+
+function generateFavoritesCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function ensureFavoritesCode() {
+  if (!favoritesCode) {
+    favoritesCode = generateFavoritesCode();
+    try {
+      localStorage.setItem(FAVORITES_CODE_KEY, favoritesCode);
+    } catch (err) {
+      console.warn("localStorage 저장 실패:", err);
+    }
+  }
+  return favoritesCode;
+}
+
+function favoritesConfigured() {
+  return FAVORITES_WEBAPP_URL && !FAVORITES_WEBAPP_URL.startsWith("여기에_");
+}
+
+async function loadFavorites() {
+  if (!favoritesConfigured()) return;
+  const code = ensureFavoritesCode();
+  const url = `${FAVORITES_WEBAPP_URL}?action=list&token=${encodeURIComponent(FAVORITES_TOKEN)}&code=${encodeURIComponent(code)}`;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    const data = await res.json();
+    if (data && data.error) throw new Error(data.error);
+    favoriteStatIds = new Set(data.statIds || []);
+  } catch (err) {
+    console.warn("즐겨찾기 불러오기 실패:", err);
+  }
+}
+
+async function toggleFavorite(statId) {
+  if (!favoritesConfigured()) {
+    alert("즐겨찾기 기능이 아직 설정되지 않았습니다.");
+    return;
+  }
+  const code = ensureFavoritesCode();
+  const isFav = favoriteStatIds.has(statId);
+  const action = isFav ? "remove" : "add";
+  const url = `${FAVORITES_WEBAPP_URL}?action=${action}&token=${encodeURIComponent(FAVORITES_TOKEN)}&code=${encodeURIComponent(code)}&statId=${encodeURIComponent(statId)}`;
+
+  // 응답 기다리지 않고 먼저 화면부터 바꾼다(체감 반응성) — 실패하면 되돌린다.
+  if (isFav) favoriteStatIds.delete(statId);
+  else favoriteStatIds.add(statId);
+  updateFavoriteButtonUI(statId);
+  renderVisible();
+
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    const data = await res.json();
+    if (!res.ok || (data && data.error)) throw new Error((data && data.error) || `HTTP ${res.status}`);
+  } catch (err) {
+    console.warn("즐겨찾기 저장 실패, 되돌립니다:", err);
+    if (isFav) favoriteStatIds.add(statId);
+    else favoriteStatIds.delete(statId);
+    updateFavoriteButtonUI(statId);
+    renderVisible();
+  }
+}
+
+function updateFavoriteButtonUI(statId) {
+  const btn = document.getElementById(`fav-btn-${cssEscapeId(statId)}`);
+  if (!btn) return;
+  const isFav = favoriteStatIds.has(statId);
+  btn.textContent = isFav ? "★ 즐겨찾기 해제" : "☆ 즐겨찾기";
+  btn.classList.toggle("active", isFav);
+}
+
+// statId에 특수문자가 섞여있어도(예: "TESLA-123") DOM id로 안전하게 쓰기 위한 이스케이프
+function cssEscapeId(id) {
+  return String(id).replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function isFavoriteStation(feature) {
+  return favoriteStatIds.has(feature.properties.statId);
+}
+
+function promptFavoritesCode() {
+  const current = favoritesCode || "(아직 없음)";
+  const input = prompt(
+    `즐겨찾기 동기화 코드입니다. 다른 기기에서도 이 코드를 입력하면 같은 즐겨찾기를 볼 수 있어요.\n\n현재 코드: ${current}\n\n다른 기기의 코드를 입력하면 그 코드로 바꿉니다(취소하면 그대로 유지):`,
+    favoritesCode || ""
+  );
+  if (input === null) return;
+  const trimmed = input.trim().toUpperCase();
+  if (!trimmed) return;
+  favoritesCode = trimmed;
+  try {
+    localStorage.setItem(FAVORITES_CODE_KEY, favoritesCode);
+  } catch (err) {
+    console.warn("localStorage 저장 실패:", err);
+  }
+  loadFavorites().then(() => { if (dataLoaded) renderVisible(); });
 }
 
 function stationColor(chargers) {
@@ -427,6 +541,8 @@ function buildPopup(props) {
     : "";
 
   const closeBtn = `<button type="button" class="popup-close" onclick="closePopup()">✕</button>`;
+  const isFav = favoriteStatIds.has(props.statId);
+  const favBtn = `<button type="button" id="fav-btn-${cssEscapeId(props.statId)}" class="favorite-btn${isFav ? " active" : ""}" onclick="toggleFavorite('${props.statId}')">${isFav ? "★ 즐겨찾기 해제" : "☆ 즐겨찾기"}</button>`;
 
   if (props.isTesla) {
     // supercharge.info는 실시간 사용 가능 여부를 제공하지 않아서,
@@ -441,6 +557,7 @@ function buildPopup(props) {
         <div class="field"><span class="k">이용시간</span><span class="v">${escapeHtml(props.useTime)}</span></div>
         <div class="note">충전기 상태 정보 미제공</div>
         <div class="field"><span class="k">${escapeHtml(props.teslaSummary)}</span></div>
+        ${favBtn}
       </div>`;
   }
 
@@ -694,9 +811,9 @@ document.getElementById("paid-parking-toggle").addEventListener("click", (e) => 
   if (dataLoaded) renderVisible();
 });
 
-document.getElementById("open-now-toggle").addEventListener("click", (e) => {
-  showOpenNowOnly = !showOpenNowOnly;
-  e.currentTarget.classList.toggle("active", showOpenNowOnly);
+document.getElementById("show-closed-toggle").addEventListener("click", (e) => {
+  showClosedStations = !showClosedStations;
+  e.currentTarget.classList.toggle("active", showClosedStations);
   if (dataLoaded) renderVisible();
 });
 
