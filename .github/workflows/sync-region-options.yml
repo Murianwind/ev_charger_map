@@ -1,0 +1,39 @@
+name: Sync region_day dropdown options
+
+# scripts/gov_charger_api.py(DAY_ZCODE_GROUPS/ZCODE_NAMES)를 GitHub 웹에서
+# 직접 고쳐서 커밋하면, 자동으로 이 워크플로가 돌면서
+# update-chargers.yml의 region_day 드롭다운 옵션을 다시 생성해서 커밋해준다.
+# 터미널/로컬 파이썬 없이 웹 화면에서 커밋만 하면 끝난다.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/gov_charger_api.py"
+      - "scripts/sync_region_day_options.py"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Regenerate region_day options
+        run: python scripts/sync_region_day_options.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/update-chargers.yml
+          git diff --cached --quiet && { echo "변경 없음, 커밋 생략"; exit 0; }
+          git commit -m "chore: region_day 드롭다운 옵션 자동 동기화"
+          git push origin HEAD:main
