@@ -154,63 +154,6 @@
     box-shadow: 0 0 0 1px rgba(0,0,0,0.15);
   }
 
-  .legend .sync-link {
-    cursor: pointer;
-    color: #2563eb;
-    text-decoration: underline;
-  }
-  .legend .sync-link:hover { color: #1d4ed8; }
-
-  .sync-modal {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.45);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-  }
-  .sync-modal.hidden { display: none; }
-
-  .sync-modal-box {
-    position: relative;
-    background: #fff;
-    border-radius: 12px;
-    padding: 24px;
-    max-width: 320px;
-    width: 90%;
-    text-align: center;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
-  }
-  .sync-modal-box h3 { margin: 0 0 10px; font-size: 16px; }
-  .sync-modal-box p { font-size: 13px; color: #555; line-height: 1.5; margin: 0 0 16px; }
-  .sync-modal-box img { width: 180px; height: 180px; margin: 0 auto 16px; display: block; }
-
-  .sync-link-row {
-    display: flex;
-    gap: 6px;
-  }
-  .sync-link-row input {
-    flex: 1;
-    min-width: 0;
-    font-size: 12px;
-    padding: 6px 8px;
-    border: 1px solid #d8d6cd;
-    border-radius: 6px;
-    background: #f6f5f1;
-  }
-  .sync-link-row button {
-    padding: 6px 12px;
-    border: none;
-    border-radius: 6px;
-    background: #2563eb;
-    color: #fff;
-    font-size: 12px;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  .sync-link-row button:hover { background: #1d4ed8; }
-
   #status-bar {
     font-size: 12px;
     color: #6b6a63;
@@ -396,19 +339,6 @@
   <div id="status-bar">불러오는 중...</div>
   <div id="last-updated"></div>
   <div id="map"></div>
-
-  <div id="syncModal" class="sync-modal hidden">
-    <div class="sync-modal-box">
-      <button type="button" class="popup-close" onclick="closeSyncModal()">✕</button>
-      <h3>다른 기기와 즐겨찾기 연결</h3>
-      <p>이 QR코드를 다른 기기 카메라로 비추거나, 아래 링크를 복사해서 카톡/메시지로 보낸 뒤 그 기기에서 열어주세요. 한 번만 하면 그 뒤로는 자동으로 같은 즐겨찾기를 씁니다.</p>
-      <img id="syncQr" alt="연결용 QR코드" />
-      <div class="sync-link-row">
-        <input id="syncLinkInput" type="text" readonly onclick="this.select()" />
-        <button type="button" id="syncCopyBtn" onclick="copySyncLink()">복사</button>
-      </div>
-    </div>
-  </div>
 </div>
 
 <!--
@@ -525,150 +455,6 @@ function stationMatchesHoursFilter(feature) {
   return isOpenNow(feature.properties.hours); // 기본값 -> 지금 운영중인 곳만
 }
 
-// ---- 즐겨찾기(기기/브라우저 넘어 동기화) ----
-// 로그인 없이 여러 기기에서 같은 즐겨찾기를 보려면, 기기마다 "동기화 코드"를
-// 하나씩 갖고 그 코드로 구글시트에 저장/조회한다. 코드를 다른 기기에도
-// 똑같이 입력해두면 같은 목록을 공유한다.
-const FAVORITES_WEBAPP_URL = "여기에_즐겨찾기_웹앱_URL";
-const FAVORITES_TOKEN = "여기에_토큰_문자열_바꾸기";
-const FAVORITES_CODE_KEY = "ev_charger_map_favorites_code";
-
-let favoriteStatIds = new Set();
-let favoritesCode = null;
-try {
-  favoritesCode = localStorage.getItem(FAVORITES_CODE_KEY);
-} catch (err) {
-  console.warn("localStorage 접근 실패(시크릿 모드 등):", err);
-}
-
-function generateFavoritesCode() {
-  return Math.random().toString(36).slice(2, 8).toUpperCase();
-}
-
-function ensureFavoritesCode() {
-  if (!favoritesCode) {
-    favoritesCode = generateFavoritesCode();
-    try {
-      localStorage.setItem(FAVORITES_CODE_KEY, favoritesCode);
-    } catch (err) {
-      console.warn("localStorage 저장 실패:", err);
-    }
-  }
-  return favoritesCode;
-}
-
-function favoritesConfigured() {
-  return FAVORITES_WEBAPP_URL && !FAVORITES_WEBAPP_URL.startsWith("여기에_");
-}
-
-async function loadFavorites() {
-  if (!favoritesConfigured()) return;
-  const code = ensureFavoritesCode();
-  const url = `${FAVORITES_WEBAPP_URL}?action=list&token=${encodeURIComponent(FAVORITES_TOKEN)}&code=${encodeURIComponent(code)}`;
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    const data = await res.json();
-    if (data && data.error) throw new Error(data.error);
-    favoriteStatIds = new Set(data.statIds || []);
-  } catch (err) {
-    console.warn("즐겨찾기 불러오기 실패:", err);
-  }
-}
-
-async function toggleFavorite(statId) {
-  if (!favoritesConfigured()) {
-    alert("즐겨찾기 기능이 아직 설정되지 않았습니다.");
-    return;
-  }
-  const code = ensureFavoritesCode();
-  const isFav = favoriteStatIds.has(statId);
-  const action = isFav ? "remove" : "add";
-  const url = `${FAVORITES_WEBAPP_URL}?action=${action}&token=${encodeURIComponent(FAVORITES_TOKEN)}&code=${encodeURIComponent(code)}&statId=${encodeURIComponent(statId)}`;
-
-  // 응답 기다리지 않고 먼저 화면부터 바꾼다(체감 반응성) — 실패하면 되돌린다.
-  if (isFav) favoriteStatIds.delete(statId);
-  else favoriteStatIds.add(statId);
-  updateFavoriteButtonUI(statId);
-  renderVisible();
-
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    const data = await res.json();
-    if (!res.ok || (data && data.error)) throw new Error((data && data.error) || `HTTP ${res.status}`);
-  } catch (err) {
-    console.warn("즐겨찾기 저장 실패, 되돌립니다:", err);
-    if (isFav) favoriteStatIds.add(statId);
-    else favoriteStatIds.delete(statId);
-    updateFavoriteButtonUI(statId);
-    renderVisible();
-  }
-}
-
-function updateFavoriteButtonUI(statId) {
-  const btn = document.getElementById(`fav-btn-${cssEscapeId(statId)}`);
-  if (!btn) return;
-  const isFav = favoriteStatIds.has(statId);
-  btn.textContent = isFav ? "★ 즐겨찾기 해제" : "☆ 즐겨찾기";
-  btn.classList.toggle("active", isFav);
-}
-
-// statId에 특수문자가 섞여있어도(예: "TESLA-123") DOM id로 안전하게 쓰기 위한 이스케이프
-function cssEscapeId(id) {
-  return String(id).replace(/[^a-zA-Z0-9_-]/g, "_");
-}
-
-function isFavoriteStation(feature) {
-  return favoriteStatIds.has(feature.properties.statId);
-}
-
-// URL에 ?sync=코드 가 붙어서 들어오면(QR 스캔이나 링크 클릭으로 들어온 경우)
-// 그 코드를 자동으로 이 기기의 즐겨찾기 코드로 채택한다 — 타이핑이나 암기가
-// 전혀 필요 없다. 채택 후에는 URL에서 지워서(주소창에 계속 남지 않게) 다음에
-// 새로고침해도 다시 처리되지 않게 한다.
-function adoptSyncCodeFromUrl() {
-  const params = new URLSearchParams(location.search);
-  const codeFromUrl = params.get("sync");
-  if (!codeFromUrl) return;
-
-  favoritesCode = codeFromUrl.trim().toUpperCase();
-  try {
-    localStorage.setItem(FAVORITES_CODE_KEY, favoritesCode);
-  } catch (err) {
-    console.warn("localStorage 저장 실패:", err);
-  }
-
-  params.delete("sync");
-  const cleanUrl = location.pathname + (params.toString() ? `?${params}` : "") + location.hash;
-  history.replaceState(null, "", cleanUrl);
-}
-
-function buildSyncUrl() {
-  const code = ensureFavoritesCode();
-  const params = new URLSearchParams(location.search);
-  params.set("sync", code);
-  return `${location.origin}${location.pathname}?${params}`;
-}
-
-function closeSyncModal() {
-  document.getElementById("syncModal").classList.add("hidden");
-}
-
-function copySyncLink() {
-  const linkInput = document.getElementById("syncLinkInput");
-  linkInput.select();
-  navigator.clipboard
-    .writeText(linkInput.value)
-    .then(() => {
-      const btn = document.getElementById("syncCopyBtn");
-      const original = btn.textContent;
-      btn.textContent = "복사됨!";
-      setTimeout(() => { btn.textContent = original; }, 1500);
-    })
-    .catch(() => {
-      // 클립보드 API가 막혀있으면(권한 등) 그냥 선택된 상태로 두어 수동 복사(Ctrl+C)하게 한다.
-    });
-}
-
 function stationColor(chargers) {
   const stats = chargers.map((c) => c.stat);
   if (stats.includes("2")) return STATUS_COLOR["2"];
@@ -713,8 +499,6 @@ function buildPopup(props) {
     : "";
 
   const closeBtn = `<button type="button" class="popup-close" onclick="closePopup()">✕</button>`;
-  const isFav = favoriteStatIds.has(props.statId);
-  const favBtn = `<button type="button" id="fav-btn-${cssEscapeId(props.statId)}" class="favorite-btn${isFav ? " active" : ""}" onclick="toggleFavorite('${props.statId}')">${isFav ? "★ 즐겨찾기 해제" : "☆ 즐겨찾기"}</button>`;
 
   if (props.isTesla) {
     // supercharge.info는 실시간 사용 가능 여부를 제공하지 않아서,
@@ -729,7 +513,6 @@ function buildPopup(props) {
         <div class="field"><span class="k">이용시간</span><span class="v">${escapeHtml(props.useTime)}</span></div>
         <div class="note">충전기 상태 정보 미제공</div>
         <div class="field"><span class="k">${escapeHtml(props.teslaSummary)}</span></div>
-        ${favBtn}
       </div>`;
   }
 
@@ -861,9 +644,6 @@ function renderVisible() {
   const withinBounds = allFeatures.filter((f) => {
     const [lng, lat] = f.geometry.coordinates;
     if (!bounds.contain(new kakao.maps.LatLng(lat, lng))) return false;
-    // 즐겨찾기는 화면 범위(지도 뷰포트) 안에만 있으면, 다른 필터(타입/주차/운영시간)와
-    // 무관하게 항상 표시한다.
-    if (isFavoriteStation(f)) return true;
     return (
       stationMatchesTypeFilter(f) &&
       stationMatchesParkingFilter(f) &&
@@ -972,6 +752,10 @@ function searchStationsByKeyword(query) {
 // 전체"를 대표하는 결과를 안 준다. addressSearch가 행정구역 이름 자체는
 // 더 잘 인식하는 경향이 있어 먼저 시도하고, 실패하면(완전한 주소가 아니면
 // 결과가 없는 경우가 많음) keywordSearch로 재시도한다.
+//
+// 어느 API로 찾았는지(source)도 같이 반환한다 — 나중에 "이 결과가 행정구역
+// 자체인지 특정 장소인지"를, 검색어 글자 수 같은 부정확한 방법 대신 결과
+// 자체의 구조로 판단하는 데 쓴다.
 function searchPlacePromise(query) {
   return new Promise((resolve) => {
     if (!kakao.maps.services) {
@@ -981,13 +765,13 @@ function searchPlacePromise(query) {
     const geocoder = new kakao.maps.services.Geocoder();
     geocoder.addressSearch(query, (result, status) => {
       if (status === kakao.maps.services.Status.OK && result.length > 0) {
-        resolve(result[0]);
+        resolve({ result: result[0], source: "address" });
         return;
       }
       const places = new kakao.maps.services.Places();
       places.keywordSearch(query, (result2, status2) => {
         if (status2 === kakao.maps.services.Status.OK && result2.length > 0) {
-          resolve(result2[0]);
+          resolve({ result: result2[0], source: "keyword" });
         } else {
           resolve(null);
         }
@@ -996,13 +780,19 @@ function searchPlacePromise(query) {
   });
 }
 
-// 검색어에 번지/도로명 표시(숫자, "로"/"길"/"번지" 등)가 없고 짧으면
-// "괴산"처럼 행정구역 이름만 입력한 걸로 보고, 그 지역 전체가 화면에 들어올
-// 만큼 넓게 확대한다. 반대로 구체적인 주소면 기존처럼 RADIUS_KM 기준으로
-// 좁게 확대한다(근처 충전소 찾는 용도).
-function looksLikeRegionQuery(query) {
-  const hasDetailMarkers = /\d|로|길|번지|층/.test(query);
-  return !hasDetailMarkers && query.trim().length <= 6;
+// addressSearch 결과가 시/군/구 단위에서 멈췄는지(동/리/번지 같은 상세 정보가
+// 없는지)로 "행정구역 자체"를 검색한 건지 판단한다 — "경복궁" 같은 특정
+// 장소는 keywordSearch로 찾히므로(source="keyword") 여기 해당하지 않고,
+// 언제나 그 지점만 좁게 보여준다. "괴산"/"성남시"처럼 addressSearch로 찾히고
+// 동/리 상세가 없는 경우에만 그 지역 전체가 보이도록 넓게 확대한다.
+function isRegionLevelResult(entry) {
+  if (!entry || entry.source !== "address") return false;
+  const addr = entry.result.address;
+  if (!addr) return false;
+  const hasDetail =
+    (addr.region_3depth_name && addr.region_3depth_name.trim()) ||
+    (addr.main_address_no && addr.main_address_no.trim());
+  return !hasDetail;
 }
 
 // 검색 결과로 선택한 충전소로 지도를 이동시키고 팝업을 연다. 화면 밖/필터에
@@ -1034,18 +824,21 @@ function clearSearch() {
   hideSearchResults();
 }
 
-function renderSearchResults(placeResult, stationMatches, query) {
+function renderSearchResults(placeEntry, stationMatches) {
   const box = document.getElementById("searchResults");
   let html = "";
 
-  if (placeResult) {
-    const label = placeResult.place_name || placeResult.address_name;
+  if (placeEntry) {
+    const p = placeEntry.result;
+    const label = p.place_name || p.address_name;
+    const regionLevel = isRegionLevelResult(placeEntry);
+    const moveLabel = regionLevel ? "이 지역 전체 보기" : "이 위치로 이동";
     html += `<div class="search-result-section-title">위치</div>`;
     html +=
-      `<div class="search-result-item" data-kind="place" ` +
-      `data-lat="${placeResult.y}" data-lng="${placeResult.x}">` +
+      `<div class="search-result-item" data-kind="place" data-region-level="${regionLevel}" ` +
+      `data-lat="${p.y}" data-lng="${p.x}">` +
       `<div class="name">📍 ${escapeHtml(label)}</div>` +
-      `<div class="addr">${escapeHtml(placeResult.address_name || "")} — 이 위치로 이동</div></div>`;
+      `<div class="addr">${escapeHtml(p.address_name || "")} — ${moveLabel}</div></div>`;
   }
 
   if (stationMatches.length > 0) {
@@ -1058,7 +851,7 @@ function renderSearchResults(placeResult, stationMatches, query) {
     });
   }
 
-  if (!placeResult && stationMatches.length === 0) {
+  if (!placeEntry && stationMatches.length === 0) {
     html = `<div class="search-result-empty">검색 결과가 없습니다.</div>`;
   }
 
@@ -1069,7 +862,7 @@ function renderSearchResults(placeResult, stationMatches, query) {
     el.addEventListener("click", () => {
       if (el.dataset.kind === "place") {
         const latlng = new kakao.maps.LatLng(parseFloat(el.dataset.lat), parseFloat(el.dataset.lng));
-        if (looksLikeRegionQuery(query)) {
+        if (el.dataset.regionLevel === "true") {
           map.setCenter(latlng);
           map.setLevel(REGION_VIEW_LEVEL);
         } else {
@@ -1091,8 +884,8 @@ async function performSearch() {
     return;
   }
   const stationMatches = searchStationsByKeyword(query);
-  const placeResult = await searchPlacePromise(query);
-  renderSearchResults(placeResult, stationMatches, query);
+  const placeEntry = await searchPlacePromise(query);
+  renderSearchResults(placeEntry, stationMatches);
 }
 
 document.getElementById("searchBtn").addEventListener("click", performSearch);
@@ -1261,10 +1054,6 @@ function initMap() {
   locateBtn.innerHTML = "⦿";
   locateBtn.addEventListener("click", goToUserLocation);
   mapContainer.appendChild(locateBtn);
-
-  // URL에 ?sync=코드로 들어온 경우 먼저 채택해두고, 그 다음 즐겨찾기를 불러온다.
-  adoptSyncCodeFromUrl();
-  loadFavorites().then(() => { if (dataLoaded) renderVisible(); });
 
   loadData();
 }
