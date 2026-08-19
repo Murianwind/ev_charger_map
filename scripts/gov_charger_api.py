@@ -82,6 +82,17 @@ EXCLUDED_KIND_DETAILS = {
     "F001",  # 서비스센터
     "F002",  # 정비소
 }
+
+# 환경공단 API의 kindDetail 분류가 실제 시설과 다르게 잘못 찍혀있는 경우가
+# 있다(예: "하나로마트 양재점"이 마트(E001)가 아니라 사업장/사옥(H003)으로
+# 잘못 분류된 사례가 실제로 발견됨). 잘 알려진 대형 마트/소매 체인은 이름
+# 자체가 "공공 이용 가능한 곳"이라는 강력한 증거이므로, kindDetail이 뭐라고
+# 나오든 카테고리 제외만 무시하고 강제로 포함시킨다 — 이용제한(limitYn 등)
+# 같은 다른 안전장치는 그대로 다 적용된다.
+FORCE_INCLUDE_NAME_KEYWORDS = (
+    "하나로마트", "이마트", "롯데마트", "홈플러스", "코스트코",
+    "GS더프레시", "메가마트", "킴스클럽", "노브랜드", "트레이더스",
+)
 # limitDetail 또는 useTime에 이 문구가 있으면 limitYn=N/kindDetail 분류와 무관하게 제외
 # (아파트 등이 kindDetail로 정확히 분류 안 돼 있는 경우가 있어 텍스트로 한 번 더 거른다).
 # - "불가"/"금지": "사용불가"/"이용불가"/"출입금지" 등을 폭넓게 잡는다(오탐 위험 낮음).
@@ -190,14 +201,17 @@ def passes_filter(item):
     if item.get("delYn") == "Y":
         return False
 
-    if item.get("kindDetail") in EXCLUDED_KIND_DETAILS:
+    stat_nm = item.get("statNm") or ""
+    force_include = any(keyword in stat_nm for keyword in FORCE_INCLUDE_NAME_KEYWORDS)
+
+    if not force_include and item.get("kindDetail") in EXCLUDED_KIND_DETAILS:
         return False
 
     text_fields = f"{item.get('limitDetail') or ''} {item.get('useTime') or ''}"
     if any(keyword in text_fields for keyword in NON_OPEN_KEYWORDS):
         return False
 
-    if any(keyword in (item.get("statNm") or "") for keyword in RESTRICTED_NAME_KEYWORDS):
+    if any(keyword in stat_nm for keyword in RESTRICTED_NAME_KEYWORDS):
         return False
 
     if item.get("limitYn") != "N":
