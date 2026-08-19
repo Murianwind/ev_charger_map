@@ -89,7 +89,15 @@ EXCLUDED_KIND_DETAILS = {
 # 자체가 "공공 이용 가능한 곳"이라는 강력한 증거이므로, kindDetail이 뭐라고
 # 나오든 카테고리 제외만 무시하고 강제로 포함시킨다 — 이용제한(limitYn 등)
 # 같은 다른 안전장치는 그대로 다 적용된다.
-FORCE_INCLUDE_NAME_KEYWORDS = ("하나로마트", "이마트", "롯데마트", "홈플러스", "코스트코", "GS더프레시", "메가마트", "킴스클럽", "노브랜드", "트레이더스", "대학교")
+FORCE_INCLUDE_NAME_KEYWORDS = ("하나로마트", "이마트", "롯데마트", "홈플러스", "코스트코", "GS더프레시", "메가마트", "킴스클럽", "노브랜드", "트레이더스")
+
+# "대학교"는 위와 다르게 카테고리 무관 강제포함이 아니라, "학교로 분류된
+# 경우에 한해서만" 강제 포함한다. "건국대학교병원"처럼 이름에 "대학교"가
+# 들어있어도 실제로는 병원(I001)으로 분류돼 있으면 병원은 그대로 제외해야
+# 하는데, 카테고리 무관 방식이면 병원까지 같이 열려버려서 별도로 분리했다.
+SCHOOL_KIND_DETAILS = {"J001", "J002", "J003"}
+FORCE_INCLUDE_SCHOOL_KEYWORDS = ("대학교",)
+
 # limitDetail 또는 useTime에 이 문구가 있으면 limitYn=N/kindDetail 분류와 무관하게 제외
 # (아파트 등이 kindDetail로 정확히 분류 안 돼 있는 경우가 있어 텍스트로 한 번 더 거른다).
 # - "불가"/"금지": "사용불가"/"이용불가"/"출입금지" 등을 폭넓게 잡는다(오탐 위험 낮음).
@@ -210,9 +218,13 @@ def passes_filter(item):
         return False
 
     stat_nm = item.get("statNm") or ""
-    force_include = any(keyword in stat_nm for keyword in FORCE_INCLUDE_NAME_KEYWORDS)
+    kind_detail = item.get("kindDetail")
 
-    if not force_include and item.get("kindDetail") in EXCLUDED_KIND_DETAILS:
+    force_include = any(keyword in stat_nm for keyword in FORCE_INCLUDE_NAME_KEYWORDS)
+    if not force_include and kind_detail in SCHOOL_KIND_DETAILS:
+        force_include = any(keyword in stat_nm for keyword in FORCE_INCLUDE_SCHOOL_KEYWORDS)
+
+    if not force_include and kind_detail in EXCLUDED_KIND_DETAILS:
         return False
 
     text_fields = f"{item.get('limitDetail') or ''} {item.get('useTime') or ''}"
