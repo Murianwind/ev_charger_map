@@ -429,6 +429,10 @@ const STATUS_COLOR = {
 };
 
 const RADIUS_KM = 1.5;
+// "괴산"처럼 행정구역 이름만 검색했을 때 쓰는 넓은 확대 레벨(카카오 레벨,
+// 숫자가 클수록 축소). 시/군 하나가 대략 화면에 들어오는 정도로 잡았다 —
+// 실제로 써보고 너무 넓거나 좁으면 이 숫자만 조정하면 된다.
+const REGION_VIEW_LEVEL = 9;
 const MOVE_SETTLE_DELAY_MS = 800; // 지도 이동이 끝난 뒤 이 시간만큼 더 기다렸다가 재표출
 const DEFAULT_CENTER = [36.4, 127.9];
 // 카카오 지도는 레벨 숫자가 작을수록 확대(=Leaflet 줌과 반대 방향)이다.
@@ -966,26 +970,42 @@ function searchStationsByKeyword(query) {
     .slice(0, 20); // 너무 많으면 드롭다운이 감당 안 되니 상위 20개만
 }
 
-// addressSearch는 완전한 주소("OO시 OO구 OO로 123")가 있어야 정확히 찾고,
-// "괴산"처럼 시/군 이름만 입력하면 결과가 안 나오는 경우가 많다(카카오 공식
-// 예제도 "정확한 주소값을 입력해야 한다"고 명시함). 카카오맵 자체 검색창도
-// 이런 느슨한 지역명/장소명 검색엔 keywordSearch(장소 검색)를 쓴다고 카카오
-// 개발자 포럼에 확인돼 있어서, 여기서도 keywordSearch로 통일한다.
+// "괴산"처럼 시/군 이름만 입력했을 때: keywordSearch는 전체 텍스트 검색이라
+// 이름에 그 글자가 들어간 개별 장소(산, 휴게소 등)를 찾아버리지, "괴산군
+// 전체"를 대표하는 결과를 안 준다. addressSearch가 행정구역 이름 자체는
+// 더 잘 인식하는 경향이 있어 먼저 시도하고, 실패하면(완전한 주소가 아니면
+// 결과가 없는 경우가 많음) keywordSearch로 재시도한다.
 function searchPlacePromise(query) {
   return new Promise((resolve) => {
     if (!kakao.maps.services) {
       resolve(null);
       return;
     }
-    const places = new kakao.maps.services.Places();
-    places.keywordSearch(query, (result, status) => {
+    const geocoder = new kakao.maps.services.Geocoder();
+    geocoder.addressSearch(query, (result, status) => {
       if (status === kakao.maps.services.Status.OK && result.length > 0) {
         resolve(result[0]);
-      } else {
-        resolve(null);
+        return;
       }
+      const places = new kakao.maps.services.Places();
+      places.keywordSearch(query, (result2, status2) => {
+        if (status2 === kakao.maps.services.Status.OK && result2.length > 0) {
+          resolve(result2[0]);
+        } else {
+          resolve(null);
+        }
+      });
     });
   });
+}
+
+// 검색어에 번지/도로명 표시(숫자, "로"/"길"/"번지" 등)가 없고 짧으면
+// "괴산"처럼 행정구역 이름만 입력한 걸로 보고, 그 지역 전체가 화면에 들어올
+// 만큼 넓게 확대한다. 반대로 구체적인 주소면 기존처럼 RADIUS_KM 기준으로
+// 좁게 확대한다(근처 충전소 찾는 용도).
+function looksLikeRegionQuery(query) {
+  const hasDetailMarkers = /\d|로|길|번지|층/.test(query);
+  return !hasDetailMarkers && query.trim().length <= 6;
 }
 
 // 검색 결과로 선택한 충전소로 지도를 이동시키고 팝업을 연다. 화면 밖/필터에
@@ -1008,7 +1028,7 @@ function hideSearchResults() {
   document.getElementById("searchResults").classList.add("hidden");
 }
 
-function renderSearchResults(placeResult, stationMatches) {
+function renderSearchResults(placeResult, stationMatches, query) {
   const box = document.getElementById("searchResults");
   let html = "";
 
@@ -1043,7 +1063,12 @@ function renderSearchResults(placeResult, stationMatches) {
     el.addEventListener("click", () => {
       if (el.dataset.kind === "place") {
         const latlng = new kakao.maps.LatLng(parseFloat(el.dataset.lat), parseFloat(el.dataset.lng));
-        setBoundsForRadius(latlng, RADIUS_KM);
+        if (looksLikeRegionQuery(query)) {
+          map.setCenter(latlng);
+          map.setLevel(REGION_VIEW_LEVEL);
+        } else {
+          setBoundsForRadius(latlng, RADIUS_KM);
+        }
         renderVisible();
         hideSearchResults();
       } else {
@@ -1061,7 +1086,7 @@ async function performSearch() {
   }
   const stationMatches = searchStationsByKeyword(query);
   const placeResult = await searchPlacePromise(query);
-  renderSearchResults(placeResult, stationMatches);
+  renderSearchResults(placeResult, stationMatches, query);
 }
 
 document.getElementById("searchBtn").addEventListener("click", performSearch);
