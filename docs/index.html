@@ -76,6 +76,62 @@
     color: #fff;
   }
 
+  #searchBox {
+    position: relative;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  #searchInput {
+    font-size: 13px;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    width: 220px;
+    background: #fff;
+  }
+  #searchBtn {
+    font-size: 13px;
+    padding: 7px 12px;
+    border: none;
+    border-radius: 6px;
+    background: var(--ink);
+    color: #fff;
+    cursor: pointer;
+  }
+  #searchBtn:hover { opacity: 0.85; }
+
+  #searchResults {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    max-height: 320px;
+    overflow-y: auto;
+    z-index: 50;
+  }
+  #searchResults.hidden { display: none; }
+
+  .search-result-section-title {
+    font-size: 11px;
+    color: #9a968a;
+    padding: 8px 12px 4px;
+  }
+  .search-result-item {
+    padding: 8px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0efe9;
+  }
+  .search-result-item:hover { background: #f6f5f1; }
+  .search-result-item .name { font-weight: 600; }
+  .search-result-item .addr { font-size: 11px; color: #6b6a63; margin-top: 2px; }
+  .search-result-empty { padding: 12px; font-size: 13px; color: #9a968a; text-align: center; }
+
   .legend {
     display: flex;
     align-items: center;
@@ -323,6 +379,11 @@
         <span class="filter-chip" id="show-closed-toggle">운영종료 포함</span>
       </div>
     </div>
+    <div id="searchBox">
+      <input type="text" id="searchInput" placeholder="주소 또는 충전소명 검색" autocomplete="off" />
+      <button type="button" id="searchBtn">검색</button>
+      <div id="searchResults" class="hidden"></div>
+    </div>
     <div class="legend">
       <span class="chip"><span class="dot" style="background:var(--available)"></span>충전가능</span>
       <span class="chip"><span class="dot" style="background:var(--charging)"></span>충전중</span>
@@ -359,7 +420,7 @@
   4. 앱 설정 → 앱 키 → "JavaScript 키" 복사해서 아래 appkey= 뒤에 붙여넣기
      (REST API 키랑 다른 키입니다 — 지오코딩용 키를 여기 쓰면 안 됩니다)
 -->
-<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=41a435402a9a232bd1d9804a4a795937&libraries=clusterer&autoload=false"></script>
+<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=41a435402a9a232bd1d9804a4a795937&libraries=clusterer,services&autoload=false"></script>
 <script>
 const STATUS_COLOR = {
   "2": "#2f7d5a", // 충전가능
@@ -887,6 +948,130 @@ function showUserLocation(center) {
     radiusCircle.setMap(map);
   }
 }
+
+// ---- 검색 ----
+// 한 검색창에 입력하면 두 가지를 동시에 시도한다: 1) 카카오 지오코딩으로
+// 주소인지 확인(맞으면 "이 위치로 이동" 옵션), 2) 이미 불러온 충전소
+// 데이터에서 이름/주소/위치명에 일치하는 게 있는지(있으면 목록으로).
+// 서버에 다시 물어볼 필요 없이 브라우저에 이미 있는 데이터로 검색한다.
+function searchStationsByKeyword(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return allFeatures
+    .filter((f) => {
+      const p = f.properties;
+      const haystack = `${p.statNm} ${p.addr} ${p.location}`.toLowerCase();
+      return haystack.includes(q);
+    })
+    .slice(0, 20); // 너무 많으면 드롭다운이 감당 안 되니 상위 20개만
+}
+
+// addressSearch는 완전한 주소("OO시 OO구 OO로 123")가 있어야 정확히 찾고,
+// "괴산"처럼 시/군 이름만 입력하면 결과가 안 나오는 경우가 많다(카카오 공식
+// 예제도 "정확한 주소값을 입력해야 한다"고 명시함). 카카오맵 자체 검색창도
+// 이런 느슨한 지역명/장소명 검색엔 keywordSearch(장소 검색)를 쓴다고 카카오
+// 개발자 포럼에 확인돼 있어서, 여기서도 keywordSearch로 통일한다.
+function searchPlacePromise(query) {
+  return new Promise((resolve) => {
+    if (!kakao.maps.services) {
+      resolve(null);
+      return;
+    }
+    const places = new kakao.maps.services.Places();
+    places.keywordSearch(query, (result, status) => {
+      if (status === kakao.maps.services.Status.OK && result.length > 0) {
+        resolve(result[0]);
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
+// 검색 결과로 선택한 충전소로 지도를 이동시키고 팝업을 연다. 화면 밖/필터에
+// 걸려 지금 안 보이던 곳이어도, 이동 후 renderVisible()이 다시 그려주므로
+// 이동 직후에 곧바로 마커가 생긴다. InfoWindow는 marker 없이 좌표만으로도
+// 열 수 있어(이미 하이패스 앱에서 쓴 패턴), 그 마커 객체를 따로 찾을 필요가 없다.
+function goToStation(feature) {
+  const [lng, lat] = feature.geometry.coordinates;
+  const latlng = new kakao.maps.LatLng(lat, lng);
+  setBoundsForRadius(latlng, RADIUS_KM);
+  renderVisible();
+  infoWindow.setContent(buildPopup(feature.properties));
+  infoWindow.setPosition(latlng);
+  infoWindow.open(map);
+  popupOpen = true;
+  hideSearchResults();
+}
+
+function hideSearchResults() {
+  document.getElementById("searchResults").classList.add("hidden");
+}
+
+function renderSearchResults(placeResult, stationMatches) {
+  const box = document.getElementById("searchResults");
+  let html = "";
+
+  if (placeResult) {
+    const label = placeResult.place_name || placeResult.address_name;
+    html += `<div class="search-result-section-title">위치</div>`;
+    html +=
+      `<div class="search-result-item" data-kind="place" ` +
+      `data-lat="${placeResult.y}" data-lng="${placeResult.x}">` +
+      `<div class="name">📍 ${escapeHtml(label)}</div>` +
+      `<div class="addr">${escapeHtml(placeResult.address_name || "")} — 이 위치로 이동</div></div>`;
+  }
+
+  if (stationMatches.length > 0) {
+    html += `<div class="search-result-section-title">충전소 (${stationMatches.length}건)</div>`;
+    stationMatches.forEach((f, idx) => {
+      html +=
+        `<div class="search-result-item" data-kind="station" data-idx="${idx}">` +
+        `<div class="name">${escapeHtml(f.properties.statNm)}</div>` +
+        `<div class="addr">${escapeHtml(f.properties.addr)}</div></div>`;
+    });
+  }
+
+  if (!placeResult && stationMatches.length === 0) {
+    html = `<div class="search-result-empty">검색 결과가 없습니다.</div>`;
+  }
+
+  box.innerHTML = html;
+  box.classList.remove("hidden");
+
+  box.querySelectorAll(".search-result-item").forEach((el) => {
+    el.addEventListener("click", () => {
+      if (el.dataset.kind === "place") {
+        const latlng = new kakao.maps.LatLng(parseFloat(el.dataset.lat), parseFloat(el.dataset.lng));
+        setBoundsForRadius(latlng, RADIUS_KM);
+        renderVisible();
+        hideSearchResults();
+      } else {
+        goToStation(stationMatches[parseInt(el.dataset.idx, 10)]);
+      }
+    });
+  });
+}
+
+async function performSearch() {
+  const query = document.getElementById("searchInput").value.trim();
+  if (!query) {
+    hideSearchResults();
+    return;
+  }
+  const stationMatches = searchStationsByKeyword(query);
+  const placeResult = await searchPlacePromise(query);
+  renderSearchResults(placeResult, stationMatches);
+}
+
+document.getElementById("searchBtn").addEventListener("click", performSearch);
+document.getElementById("searchInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") performSearch();
+});
+document.addEventListener("click", (e) => {
+  const box = document.getElementById("searchBox");
+  if (box && !box.contains(e.target)) hideSearchResults();
+});
 
 // "현재 위치로 이동" 버튼 핸들러: 이미 위치를 알고 있으면 바로 이동,
 // 모르면(아직 못 받았거나 최초 거부 후 다시 시도) 새로 요청한다.
