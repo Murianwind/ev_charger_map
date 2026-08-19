@@ -391,7 +391,6 @@
       <span class="chip"><span class="dot" style="background:#fff;box-shadow:0 0 0 2px #cc0000"></span>수퍼차저</span>
       <span class="chip"><span class="dot" style="background:#fff;box-shadow:0 0 0 2px #f59e0b"></span>유료주차</span>
       <span class="chip"><span class="dot" style="background:#fff;box-shadow:0 0 0 2px #6b7280"></span>운영종료</span>
-      <span class="chip sync-link" onclick="showSyncPanel()">🔗 다른 기기와 즐겨찾기 연결</span>
     </div>
   </header>
   <div id="status-bar">불러오는 중...</div>
@@ -648,15 +647,6 @@ function buildSyncUrl() {
   const params = new URLSearchParams(location.search);
   params.set("sync", code);
   return `${location.origin}${location.pathname}?${params}`;
-}
-
-function showSyncPanel() {
-  const url = buildSyncUrl();
-  const qrImg = document.getElementById("syncQr");
-  const linkInput = document.getElementById("syncLinkInput");
-  qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(url)}`;
-  linkInput.value = url;
-  document.getElementById("syncModal").classList.remove("hidden");
 }
 
 function closeSyncModal() {
