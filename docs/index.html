@@ -40,12 +40,18 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: 8px;
     padding: 12px 20px;
     background: var(--paper);
     border-bottom: 1px solid var(--line);
     z-index: 1000;
     flex-wrap: wrap;
+  }
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   header h1 {
@@ -347,7 +353,10 @@
 <body>
 <div id="app">
   <header>
-    <h1>전국 테슬라 충전 지도</h1>
+    <div class="title-row">
+      <h1>전국 테슬라 충전 지도</h1>
+      <button type="button" id="infoToggleBtn">ℹ️ 범례·갱신정보</button>
+    </div>
     <div id="searchBox">
       <input type="text" id="searchInput" placeholder="주소 또는 충전소명 검색" autocomplete="off" />
       <button type="button" id="searchBtn">검색</button>
@@ -361,7 +370,6 @@
       <span class="filter-chip" id="paid-parking-toggle">유료주차 포함</span> /
       <span class="filter-chip" id="show-closed-toggle">운영종료 포함</span>
     </div>
-    <button type="button" id="infoToggleBtn">ℹ️ 범례·갱신정보</button>
   </header>
   <div id="infoPanel" class="hidden">
     <div class="legend">
