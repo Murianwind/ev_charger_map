@@ -203,12 +203,6 @@
     padding-top: 6px;
   }
   #regionUpdateDetail.hidden { display: none; }
-  #regionUpdateDetail .region-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 2px 0;
-  }
 
   #map {
     flex: 1;
@@ -1067,8 +1061,7 @@ function toggleRegionDetail() {
   if (!hasData) {
     // 이 기능 반영 이후로 지역 갱신이 아직 한 번도 안 돈 상태 — 조용히
     // 무시하는 대신, 왜 안 보이는지 안내한다.
-    detailEl.innerHTML =
-      `<div class="region-row"><span>아직 지역별 기록이 없습니다 — 다음 지역 갱신부터 쌓여요.</span></div>`;
+    detailEl.textContent = "아직 지역별 기록이 없습니다 — 다음 지역 갱신부터 쌓여요.";
     detailEl.classList.remove("hidden");
     return;
   }
@@ -1084,13 +1077,12 @@ function toggleRegionDetail() {
   });
 
   const rows = [...groups.entries()].sort((a, b) => new Date(a[0]) - new Date(b[0]));
-  detailEl.innerHTML = rows
+  detailEl.textContent = rows
     .map(
       ([time, g]) =>
-        `<div class="region-row"><span>${escapeHtml(g.names.join(", "))}</span>` +
-        `<span>${formatKstTime(time)} · ${g.count.toLocaleString()}개소</span></div>`
+        `${g.names.join(", ")} ${formatKstTime(time)} · ${g.count.toLocaleString()}개소`
     )
-    .join("");
+    .join(" / ");
   detailEl.classList.remove("hidden");
 }
 
