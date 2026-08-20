@@ -1017,6 +1017,7 @@ function formatKstTime(iso) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
 }
 
@@ -1072,14 +1073,22 @@ function toggleRegionDetail() {
     return;
   }
 
-  const entries = Object.values(lastMeta.regionUpdates).sort(
-    (a, b) => new Date(a.time) - new Date(b.time)
-  );
-  detailEl.innerHTML = entries
+  // 같은 요일 그룹으로 한 번에 갱신된 지역들은 시각이 정확히 같으니, 그
+  // 시각별로 묶어서 한 줄로 보여준다("서울,광주전남,세종 08.19 14:04"처럼).
+  const groups = new Map(); // time -> { names: [], count: 0 }
+  Object.values(lastMeta.regionUpdates).forEach((e) => {
+    if (!groups.has(e.time)) groups.set(e.time, { names: [], count: 0 });
+    const g = groups.get(e.time);
+    g.names.push(e.name);
+    g.count += e.count;
+  });
+
+  const rows = [...groups.entries()].sort((a, b) => new Date(a[0]) - new Date(b[0]));
+  detailEl.innerHTML = rows
     .map(
-      (e) =>
-        `<div class="region-row"><span>${escapeHtml(e.name)}</span>` +
-        `<span>${formatKstTime(e.time)} · ${e.count.toLocaleString()}개소</span></div>`
+      ([time, g]) =>
+        `<div class="region-row"><span>${escapeHtml(g.names.join(", "))}</span>` +
+        `<span>${formatKstTime(time)} · ${g.count.toLocaleString()}개소</span></div>`
     )
     .join("");
   detailEl.classList.remove("hidden");
