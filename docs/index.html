@@ -61,6 +61,26 @@
     margin-top: 2px;
   }
 
+  #infoToggleBtn {
+    font-size: 12px;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+    color: var(--ink);
+    flex-shrink: 0;
+  }
+  #infoToggleBtn:hover { background: #f6f5f1; }
+  #infoToggleBtn.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+  #infoPanel {
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--line);
+    background: #faf9f5;
+  }
+  #infoPanel.hidden { display: none; }
+
   .filter-chip {
     cursor: pointer;
     padding: 1px 4px;
@@ -161,12 +181,12 @@
     padding: 4px 20px;
     border-bottom: 1px solid var(--line);
   }
+  #status-bar:empty { display: none; }
 
   #last-updated {
     font-size: 11px;
     color: #9a968a;
-    padding: 0 20px 4px;
-    border-bottom: 1px solid var(--line);
+    padding-top: 8px;
   }
   #last-updated.has-detail { cursor: pointer; }
   #last-updated.has-detail:hover { color: #6b6a63; }
@@ -174,9 +194,7 @@
   #regionUpdateDetail {
     font-size: 11px;
     color: #6b6a63;
-    padding: 6px 20px;
-    border-bottom: 1px solid var(--line);
-    background: #faf9f5;
+    padding-top: 6px;
   }
   #regionUpdateDetail.hidden { display: none; }
   #regionUpdateDetail .region-row {
@@ -329,22 +347,23 @@
 <body>
 <div id="app">
   <header>
-    <div>
-      <h1>전국 테슬라 충전 지도</h1>
-      <div class="sub" id="type-filter">
-        <span class="filter-chip" data-type="02">AC완속</span> /
-        <span class="filter-chip" data-type="09">NACS</span> /
-        <span class="filter-chip" data-type="10">DC콤보+NACS</span> /
-        <span class="filter-chip" data-type="TESLA">수퍼차저</span> /
-        <span class="filter-chip" id="paid-parking-toggle">유료주차 포함</span> /
-        <span class="filter-chip" id="show-closed-toggle">운영종료 포함</span>
-      </div>
-    </div>
+    <h1>전국 테슬라 충전 지도</h1>
     <div id="searchBox">
       <input type="text" id="searchInput" placeholder="주소 또는 충전소명 검색" autocomplete="off" />
       <button type="button" id="searchBtn">검색</button>
       <div id="searchResults" class="hidden"></div>
     </div>
+    <div class="sub" id="type-filter">
+      <span class="filter-chip" data-type="02">AC완속</span> /
+      <span class="filter-chip" data-type="09">NACS</span> /
+      <span class="filter-chip" data-type="10">DC콤보+NACS</span> /
+      <span class="filter-chip" data-type="TESLA">수퍼차저</span> /
+      <span class="filter-chip" id="paid-parking-toggle">유료주차 포함</span> /
+      <span class="filter-chip" id="show-closed-toggle">운영종료 포함</span>
+    </div>
+    <button type="button" id="infoToggleBtn">ℹ️ 범례·갱신정보</button>
+  </header>
+  <div id="infoPanel" class="hidden">
     <div class="legend">
       <span class="chip"><span class="dot" style="background:var(--available)"></span>충전가능</span>
       <span class="chip"><span class="dot" style="background:var(--charging)"></span>충전중</span>
@@ -353,10 +372,10 @@
       <span class="chip"><span class="dot" style="background:#fff;box-shadow:0 0 0 2px #f59e0b"></span>유료주차</span>
       <span class="chip"><span class="dot" style="background:#fff;box-shadow:0 0 0 2px #6b7280"></span>운영종료</span>
     </div>
-  </header>
-  <div id="status-bar">불러오는 중...</div>
-  <div id="last-updated"></div>
-  <div id="regionUpdateDetail" class="hidden"></div>
+    <div id="last-updated"></div>
+    <div id="regionUpdateDetail" class="hidden"></div>
+  </div>
+  <div id="status-bar"></div>
   <div id="map"></div>
 </div>
 
@@ -684,7 +703,7 @@ function renderVisible() {
 
   statusBar.textContent = capped
     ? `현재 화면에 ${withinBounds.length.toLocaleString()}개소 중 ${MAX_MARKERS.toLocaleString()}개만 표시 중 — 더 확대해 보세요`
-    : `현재 화면 내 충전소 ${withinBounds.length.toLocaleString()}개소 표시 중`;
+    : "";
 }
 
 let userLatLng = null;
@@ -755,15 +774,16 @@ function showUserLocation(center) {
 // 데이터에서 이름/주소/위치명에 일치하는 게 있는지(있으면 목록으로).
 // 서버에 다시 물어볼 필요 없이 브라우저에 이미 있는 데이터로 검색한다.
 function searchStationsByKeyword(query) {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  return allFeatures
-    .filter((f) => {
-      const p = f.properties;
-      const haystack = `${p.statNm} ${p.addr} ${p.location}`.toLowerCase();
-      return haystack.includes(q);
-    })
-    .slice(0, 20); // 너무 많으면 드롭다운이 감당 안 되니 상위 20개만
+  // 공백으로 나눈 단어들이 순서/인접 상관없이 전부 이름/주소/위치명 어딘가에
+  // 있으면 매치시킨다("BMW차징스테이션 경기"처럼 두 단어를 같이 검색해도,
+  // 그 사이에 지점명이 끼어있어서 못 찾는 문제를 없애기 위함).
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [];
+  return allFeatures.filter((f) => {
+    const p = f.properties;
+    const haystack = `${p.statNm} ${p.addr} ${p.location}`.toLowerCase();
+    return terms.every((term) => haystack.includes(term));
+  });
 }
 
 // "괴산"처럼 시/군 이름만 입력했을 때: keywordSearch는 전체 텍스트 검색이라
@@ -914,6 +934,13 @@ document.getElementById("searchInput").addEventListener("keydown", (e) => {
 document.addEventListener("click", (e) => {
   const box = document.getElementById("searchBox");
   if (box && !box.contains(e.target)) hideSearchResults();
+});
+
+// 범례/갱신정보는 평소엔 접어둬서 지도 영역을 더 확보하고, 필요할 때만 펼친다.
+document.getElementById("infoToggleBtn").addEventListener("click", (e) => {
+  const panel = document.getElementById("infoPanel");
+  const nowHidden = panel.classList.toggle("hidden");
+  e.currentTarget.classList.toggle("active", !nowHidden);
 });
 
 // "현재 위치로 이동" 버튼 핸들러: 이미 위치를 알고 있으면 바로 이동,
