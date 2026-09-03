@@ -1,4 +1,9 @@
-FROM myoung34/github-runner:latest
+FROM derskythe/github-runner:latest
+# myoung34/github-runner에서 여기로 교체(2026-08 기준). 같은 계보(포크)라
+# 환경변수 인터페이스(ACCESS_TOKEN, REPO_URL, RUNNER_NAME 등)는 동일하지만,
+# entrypoint.sh 경로가 절대경로(/entrypoint.sh)가 아니라 WorkingDir 기준
+# 상대경로(./entrypoint.sh)라서 wrapper-entrypoint.sh도 같이 고쳤다.
+# 압축 이미지 크기: myoung34 807MB -> derskythe 488MB (약 40% 감소).
 
 # python3/git은 이제 이 컨테이너가 아니라 GitHub Actions 워크플로(러너가
 # 받아서 실행) 쪽에서 setup-python/checkout이 알아서 준비해준다.

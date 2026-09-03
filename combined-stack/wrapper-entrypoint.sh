@@ -25,4 +25,7 @@ cron
 
 echo "[runner] GitHub Actions 러너 시작"
 cd "$RUNNER_HOME"
-exec /entrypoint.sh ./run.sh
+# derskythe/github-runner 베이스는 entrypoint.sh를 절대경로(/entrypoint.sh)가
+# 아니라 WorkingDir(/actions-runner) 기준 상대경로로 둔다 — myoung34에서
+# 옮기면서 여기만 절대경로 -> 상대경로로 바꿨다(나머지는 동일).
+exec ./entrypoint.sh ./run.sh
